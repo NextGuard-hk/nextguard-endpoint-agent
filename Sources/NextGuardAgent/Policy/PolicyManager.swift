@@ -295,7 +295,7 @@ final class PolicyManager: @unchecked Sendable {
     if let bundle = try? decoder.decode(PolicyBundle.self, from: data) {
       activePolicies = bundle.policies.filter { $0.enabled }.sorted { $0.priority > $1.priority }
       policyVersion = bundle.version
-      logger.info("Loaded cached policies: v\(bundle.version), \(activePolicies.count) active")
+      logger.info("Loaded cached policies: v\(bundle.version), \(self.activePolicies.count) active")
     }
   }
   
