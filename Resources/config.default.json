@@ -1,0 +1,75 @@
+{
+  "$schema": "https://next-guard.com/schemas/agent-config-v1.json",
+  "version": "1.0.0",
+  "agent": {
+    "id": "",
+    "name": "",
+    "serverUrl": "https://api.next-guard.com",
+    "heartbeatInterval": 60,
+    "logLevel": "info"
+  },
+  "modules": {
+    "fileSystem": {
+      "enabled": true,
+      "monitoredPaths": ["/Users", "/tmp"],
+      "excludedPaths": ["/Users/*/Library/Caches"],
+      "sensitiveExtensions": [".docx", ".xlsx", ".pdf", ".pptx", ".csv", ".key", ".numbers"]
+    },
+    "clipboard": {
+      "enabled": true,
+      "maxContentLength": 10240,
+      "checkInterval": 2
+    },
+    "network": {
+      "enabled": true,
+      "monitoredPorts": [80, 443, 8080, 8443],
+      "blockedDomains": [],
+      "allowedDomains": []
+    },
+    "browser": {
+      "enabled": true,
+      "monitoredBrowsers": ["Safari", "Google Chrome", "Firefox", "Microsoft Edge"],
+      "blockDangerousDownloads": true
+    },
+    "usb": {
+      "enabled": true,
+      "blockMassStorage": false,
+      "allowedDevices": []
+    },
+    "email": {
+      "enabled": true,
+      "monitorOutbound": true,
+      "maxAttachmentSize": 26214400
+    },
+    "screen": {
+      "enabled": true,
+      "blockScreenCapture": false,
+      "watermarkEnabled": true
+    },
+    "encryption": {
+      "enabled": true,
+      "algorithm": "AES-256-GCM"
+    }
+  },
+  "dlp": {
+    "enabled": true,
+    "patterns": {
+      "creditCard": true,
+      "ssn": true,
+      "email": true,
+      "hkid": true,
+      "passport": true,
+      "custom": []
+    },
+    "actions": {
+      "onDetection": "alert",
+      "onHighSeverity": "block"
+    }
+  },
+  "audit": {
+    "enabled": true,
+    "retentionDays": 90,
+    "localStorageMB": 500,
+    "syncToServer": true
+  }
+}
