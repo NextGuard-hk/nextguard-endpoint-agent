@@ -13,7 +13,7 @@ import os.log
 import NaturalLanguage
 
 // MARK: - DLP Rule Severity & Action (ISO 27001 A.8.12 classifications)
-enum DLPSeverity: String, Codable, CaseIterable {
+enum DLPSeverity: String, Codable, CaseIterable, Comparable {
     case critical, high, medium, low, info
 }
 
