@@ -23,7 +23,6 @@ class ChannelMonitorCoordinator {
     }
 
     func startAll() {
-        // Start all registered monitors
         for (channel, _) in monitors {
             Logger(subsystem: "com.nextguard.agent", category: "ChannelCoordinator")
                 .info("Starting monitor for channel: \(channel)")
@@ -132,44 +131,6 @@ class HeartbeatService {
         timer?.invalidate()
         timer = nil
     }
-}
-
-// MARK: - Web Activity Types (used by BrowserMonitor)
-
-enum WebAction: String {
-    case allow
-    case block
-    case warn
-}
-
-struct WebActivity {
-    enum ActivityType: String {
-        case navigation
-        case download
-        case upload
-    }
-    let url: String
-    let domain: String
-    let activityType: ActivityType
-    let action: WebAction
-    let browser: String
-    let fileName: String?
-    let contentLength: Int64
-    let timestamp: Date
-}
-
-// MARK: - Audit Types
-
-enum AuditCategory: String {
-    case fileActivity
-    case networkActivity
-    case clipboardActivity
-    case usbActivity
-    case emailActivity
-    case browserActivity
-    case screenActivity
-    case policyViolation
-    case systemEvent
 }
 
 // MARK: - DLP Policy Engine isActive Extension
