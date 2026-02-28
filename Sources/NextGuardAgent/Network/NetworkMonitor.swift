@@ -212,10 +212,10 @@ final class NetworkMonitor: ObservableObject {
     logger.info("Cloud upload detected: \(host) from \(sourceApp)")
     
     // Check file content
-    let violations = engine.scanContent(data, channel: .cloud)
+    let violations = engine.scanContent(String(data: data, encoding: .utf8) ?? "", channel: .cloud)
     
     if !violations.isEmpty {
-      return violations.contains(where: { $0.severity == .critical || $0.severity == .high }) ? .block : .audit
+      return violations.contains(where: { $0.severity == DLPSeverity.critical || $0.severity == DLPSeverity.high }) ? DLPAction.block : DLPAction.audit
     }
     return .allow
   }
