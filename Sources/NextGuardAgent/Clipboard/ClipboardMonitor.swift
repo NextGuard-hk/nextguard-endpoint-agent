@@ -171,7 +171,7 @@ final class ClipboardMonitor: ObservableObject {
   private func inspectFileURL(_ url: URL, sourceApp: String) {
     guard let data = try? Data(contentsOf: url) else { return }
     
-    let violations = engine.scanContent(data, channel: .clipboard)
+    let violations = engine.scanContent(String(data: data, encoding: .utf8) ?? "", channel: .clipboard)
     
     if !violations.isEmpty {
       let action: DLPAction = violations.contains(where: { $0.severity == .critical }) ? .block : .audit
