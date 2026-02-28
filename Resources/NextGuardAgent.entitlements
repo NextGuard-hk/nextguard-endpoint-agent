@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- App Sandbox -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  
+  <!-- Network Access -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+  
+  <!-- File Access -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <key>com.apple.security.files.downloads.read-write</key>
+  <true/>
+  
+  <!-- System Extension -->
+  <key>com.apple.developer.system-extension.install</key>
+  <true/>
+  
+  <!-- Endpoint Security -->
+  <key>com.apple.developer.endpoint-security.client</key>
+  <true/>
+  
+  <!-- Network Extension -->
+  <key>com.apple.developer.networking.networkextension</key>
+  <array>
+    <string>content-filter-provider</string>
+    <string>dns-proxy</string>
+    <string>app-proxy-provider</string>
+  </array>
+  
+  <!-- Hardened Runtime -->
+  <key>com.apple.security.hardened-runtime</key>
+  <true/>
+  
+  <!-- Accessibility (for clipboard monitoring) -->
+  <key>com.apple.security.temporary-exception.apple-events</key>
+  <array>
+    <string>com.apple.systemevents</string>
+  </array>
+  
+  <!-- USB Device Access -->
+  <key>com.apple.security.device.usb</key>
+  <true/>
+  
+  <!-- Keychain Access -->
+  <key>com.apple.security.keychain-access-groups</key>
+  <array>
+    <string>$(AppIdentifierPrefix)com.nextguard.agent</string>
+  </array>
+</dict>
+</plist>
