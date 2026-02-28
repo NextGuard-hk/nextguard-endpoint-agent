@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nextguard.agent</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/NextGuard/NextGuardAgent</string>
+    <string>--daemon</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+
+  <key>WorkingDirectory</key>
+  <string>/Library/NextGuard</string>
+
+  <key>StandardOutPath</key>
+  <string>/Library/NextGuard/Logs/agent.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Library/NextGuard/Logs/agent-error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NEXTGUARD_CONFIG</key>
+    <string>/Library/NextGuard/config.json</string>
+  </dict>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>LowPriorityBackgroundIO</key>
+  <true/>
+</dict>
+</plist>
