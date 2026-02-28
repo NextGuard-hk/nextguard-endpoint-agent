@@ -10,6 +10,7 @@
 import Foundation
 import Network
 import OSLog
+import AppKit
 
 // MARK: - Web Activity Types
 struct WebActivity: Codable {
@@ -191,7 +192,7 @@ final class BrowserMonitor: @unchecked Sendable {
     if dangerousExtensions.contains(ext) {
       AuditLogger.shared.log(category: .networkActivity, severity: .high,
         action: "dangerous_download", description: "Dangerous file download: \(fileName)",
-        filePath: fileName, metadata: ["url": url, "extension": ext])
+        metadata: ["url": url, "extension": ext], filePath: fileName)
       return .warn
     }
     return .allow
