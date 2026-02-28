@@ -14,8 +14,22 @@ import NaturalLanguage
 
 // MARK: - DLP Rule Severity & Action (ISO 27001 A.8.12 classifications)
 enum DLPSeverity: String, Codable, CaseIterable, Comparable {
-    case critical, high, medium, low, info
-}
+        case critical, high, medium, low, info
+
+        private var sortOrder: Int {
+            switch self {
+            case .critical: return 4
+            case .high: return 3
+            case .medium: return 2
+            case .low: return 1
+            case .info: return 0
+            }
+        }
+
+        static func < (lhs: DLPSeverity, rhs: DLPSeverity) -> Bool {
+            return lhs.sortOrder < rhs.sortOrder
+        }
+    }
 
 enum DLPAction: String, Codable, CaseIterable {
     case block, quarantine, audit, encrypt, notify, allow
