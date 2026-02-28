@@ -180,7 +180,7 @@ final class FileSystemWatcher: ObservableObject {
     let hash = computeSHA256(data: data)
     
     // Run DLP scan
-    let violations = engine.scanContent(data, channel: .file)
+    let violations = engine.scanContent(String(data: data, encoding: .utf8) ?? "", channel: .file)
     
     if !violations.isEmpty {
       let highestSeverity = violations.map { $0.severity }.max() ?? .info
@@ -206,10 +206,10 @@ final class FileSystemWatcher: ObservableObject {
       // Report to server
       AgentAPIClient.shared.reportFileEvent(event)
       
-      if action == .block {
+      if action == DLPAction.block {
         totalBlocked += 1
         blockFileAccess(at: path)
-      } else if action == .quarantine {
+      } else if action == DLPAction.quarantine {
         quarantineFile(at: path)
       }
       
