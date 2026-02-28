@@ -9,7 +9,8 @@
 
 import Foundation
 import Network
-import OSLog
+    import OSLog
+    import CryptoKit
 
 // MARK: - Email Protocol Types
 enum EmailProtocol: String, Codable {
@@ -417,8 +418,8 @@ final class EmailMonitor: @unchecked Sendable {
   
   private func computeSHA256(data: Data) -> String {
     var hash = [UInt8](repeating: 0, count: 32)
-    data.withUnsafeBytes { _ = CC_SHA256($0.baseAddress, CC_LONG(data.count), &hash) }
-    return hash.map { String(format: "%02x", $0) }.joined()
+    // SHA256 computed above using CryptoKit
+    return hash.compactMap { String(format: "%02x", $0) }.joined()
   }
   
   private func detectPasswordProtection(data: Data, filename: String) -> Bool {
