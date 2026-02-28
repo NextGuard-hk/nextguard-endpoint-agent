@@ -28,17 +28,7 @@ jobs:
         run: swift package resolve
 
       - name: Build (Release)
-        run: swift build -c release 2>&1 | head -100 || true
-
-      - name: Build Status Check
-        run: |
-          if swift build -c release 2>&1 | grep -q "Build complete"; then
-            echo "Build succeeded"
-          else
-            echo "Build has compilation errors - creating placeholder for DMG"
-            mkdir -p .build/release
-            echo "placeholder" > .build/release/${{ env.PRODUCT_NAME }}
-          fi
+        run: swift build -c release 2>&1 | tail -50
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
@@ -46,7 +36,7 @@ jobs:
           name: nextguard-agent-build
           path: .build/release/
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   package-dmg:
     name: Package DMG Installer
@@ -62,13 +52,59 @@ jobs:
         with:
           swift-version: ${{ env.SWIFT_VERSION }}
 
-      - name: Build Release
-        run: swift build -c release || true
+      - name: Build Release Binary
+        run: swift build -c release
 
-      - name: Create DMG
+      - name: Create App Bundle and DMG
         run: |
-          chmod +x Scripts/build-dmg.sh
-          ./Scripts/build-dmg.sh || echo "DMG creation requires compiled binary"
+          set -e
+          VERSION=${GITHUB_REF#refs/tags/v}
+          APP_NAME="NextGuard DLP Agent"
+          BUILD_DIR=".build"
+          APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
+
+          # Create .app bundle structure
+          mkdir -p "$APP_BUNDLE/Contents/MacOS"
+          mkdir -p "$APP_BUNDLE/Contents/Resources/Config"
+          mkdir -p "$APP_BUNDLE/Contents/Library/LaunchDaemons"
+
+          # Copy binary
+          cp .build/release/NextGuardAgent "$APP_BUNDLE/Contents/MacOS/"
+          chmod +x "$APP_BUNDLE/Contents/MacOS/NextGuardAgent"
+
+          # Copy Info.plist and resources
+          cp Resources/Info.plist "$APP_BUNDLE/Contents/"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist"
+
+          # Copy default policy if exists
+          if [ -f Resources/default-policy.json ]; then
+            cp Resources/default-policy.json "$APP_BUNDLE/Contents/Resources/Config/"
+          fi
+
+          # Create DMG staging
+          DMG_TEMP="$BUILD_DIR/dmg_staging"
+          mkdir -p "$DMG_TEMP"
+          cp -R "$APP_BUNDLE" "$DMG_TEMP/"
+          ln -s /Applications "$DMG_TEMP/Applications"
+
+          # Create README in DMG
+          cat > "$DMG_TEMP/README.txt" << EOF
+          NextGuard DLP Agent v${VERSION}
+          Copyright (c) 2026 NextGuard Technology Limited
+          https://www.next-guard.com
+          EOF
+
+          # Build DMG
+          mkdir -p build
+          hdiutil create \
+            -volname "$APP_NAME" \
+            -srcfolder "$DMG_TEMP" \
+            -ov -format UDZO \
+            "build/NextGuardDLPAgent-${VERSION}.dmg"
+
+          echo "DMG created successfully:"
+          ls -la build/*.dmg
+          shasum -a 256 build/*.dmg
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
@@ -76,7 +112,6 @@ jobs:
           name: nextguard-agent-dmg
           path: build/*.dmg
           retention-days: 30
-          if-no-files-found: ignore
 
   release:
     name: Create GitHub Release
@@ -91,11 +126,9 @@ jobs:
         with:
           name: nextguard-agent-dmg
           path: ./artifacts
-        continue-on-error: true
 
-      - name: Create Release
+      - name: Update Release with DMG
         uses: softprops/action-gh-release@v2
         with:
           files: ./artifacts/*
           generate_release_notes: true
-          draft: true
