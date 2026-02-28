@@ -1,0 +1,109 @@
+name: Build & Package NextGuard Agent
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  PRODUCT_NAME: NextGuardAgent
+  SWIFT_VERSION: '5.9'
+  MACOS_TARGET: '14.0'
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+
+      - name: Resolve Dependencies
+        run: swift package resolve
+
+      - name: Build (Release)
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Run Tests
+        run: swift test --parallel
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextguard-agent-build
+          path: .build/release/${{ env.PRODUCT_NAME }}
+          retention-days: 7
+
+  package-dmg:
+    name: Package DMG Installer
+    needs: build
+    runs-on: macos-14
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+
+      - name: Build Universal Binary
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Create DMG
+        run: |
+          chmod +x Scripts/build-dmg.sh
+          ./Scripts/build-dmg.sh
+
+      - name: Notarize DMG
+        if: env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcrun notarytool submit build/NextGuardAgent-*.dmg \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextguard-agent-dmg
+          path: build/*.dmg
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: package-dmg
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: nextguard-agent-dmg
+
+      - name: Generate Checksums
+        run: shasum -a 256 *.dmg > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.dmg
+            checksums.txt
+          generate_release_notes: true
+          draft: true
