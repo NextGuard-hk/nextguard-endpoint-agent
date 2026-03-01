@@ -123,7 +123,7 @@ class MainWindowController: NSObject {
             ("--- System Info ---", ""),
             ("Hostname", hostname),
             ("OS Version", "macOS \(os)"),
-            ("Agent Version", "1.1.0"),
+            ("Agent Version", "1.2.0"),
             ("Architecture", "arm64 / Apple Silicon"),
             ("Console URL", "https://www.next-guard.com/console"),
             ("", ""),
@@ -219,7 +219,7 @@ class MainWindowController: NSObject {
         logo.image = NSImage(systemSymbolName: "shield.checkered", accessibilityDescription: "NG")
         logo.contentTintColor = .labelColor; logo.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 48, weight: .medium); c.addSubview(logo)
         let t = NSTextField(labelWithString: "NextGuard Endpoint DLP Agent"); t.font = .boldSystemFont(ofSize: 18); t.translatesAutoresizingMaskIntoConstraints = false; c.addSubview(t)
-        let v = NSTextField(labelWithString: "Version 1.1.0 (Build 2026.01)"); v.font = .systemFont(ofSize: 13); v.textColor = .secondaryLabelColor; v.translatesAutoresizingMaskIntoConstraints = false; c.addSubview(v)
+        let v = NSTextField(labelWithString: "Version 1.2.0 (Build 2026.01)"); v.font = .systemFont(ofSize: 13); v.textColor = .secondaryLabelColor; v.translatesAutoresizingMaskIntoConstraints = false; c.addSubview(v)
         let d = NSTextField(labelWithString: "Enterprise-grade Data Loss Prevention for macOS\nAI-powered | 43+ DLP policies | 13 channels"); d.font = .systemFont(ofSize: 12); d.textColor = .secondaryLabelColor; d.maximumNumberOfLines = 5; d.translatesAutoresizingMaskIntoConstraints = false; c.addSubview(d)
         let cp = NSTextField(labelWithString: "Copyright (c) 2026 NextGuard Technology Limited.\nhttps://www.next-guard.com"); cp.font = .systemFont(ofSize: 11); cp.textColor = .tertiaryLabelColor; cp.maximumNumberOfLines = 3; cp.translatesAutoresizingMaskIntoConstraints = false; c.addSubview(cp)
         NSLayoutConstraint.activate([
