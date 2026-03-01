@@ -81,6 +81,12 @@ jobs:
             cp Resources/default-policy.json "$APP_BUNDLE/Contents/Resources/Config/"
           fi
 
+          # Ad-hoc code sign the binary and app bundle
+          codesign --force --deep -s - "$APP_BUNDLE/Contents/MacOS/NextGuardAgent"
+          codesign --force --deep -s - "$APP_BUNDLE"
+          echo "Code signing complete"
+          codesign -dv "$APP_BUNDLE" 2>&1 || true
+
           # Create DMG staging
           DMG_TEMP="$BUILD_DIR/dmg_staging"
           mkdir -p "$DMG_TEMP"
@@ -92,6 +98,12 @@ jobs:
           NextGuard DLP Agent v${VERSION}
           Copyright (c) 2026 NextGuard Technology Limited
           https://www.next-guard.com
+
+          INSTALLATION:
+          1. Drag "NextGuard DLP Agent" to Applications
+          2. If macOS blocks the app, run in Terminal:
+             xattr -cr /Applications/NextGuard\ DLP\ Agent.app
+          3. Open the app from Applications
           EOF
 
           # Build DMG
