@@ -59,7 +59,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(policiesMenuItem)
         menu.addItem(NSMenuItem.separator())
 
-        menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
+        menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(126
+        ), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "About NextGuard", action: #selector(showAbout), keyEquivalent: ""))
@@ -124,13 +125,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showDashboard() {
-        let alert = NSAlert()
-        alert.messageText = "NextGuard DLP Dashboard"
-        let agentId = mgmtClient.agentId ?? "Not registered"
-        alert.informativeText = "Agent ID: \(agentId)\nMonitoring Status: Active\nPolicies Loaded: \(policyEngine.activePolicies.count)\nChannels: File, Clipboard, Network, Email, USB, Print\n\nVersion: 1.1.0\nhttps://www.next-guard.com/console"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        MainWindowController.shared.showWindow()
     }
 
     @objc func scanClipboard() {
@@ -172,13 +167,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc func showAbout() {
-        let alert = NSAlert()
-        alert.messageText = "NextGuard Endpoint DLP Agent"
-        alert.informativeText = "Version 1.1.0\n\nEnterprise-grade Data Loss Prevention for macOS\n\nCopyright (c) 2026 NextGuard Technology Limited.\nhttps://www.next-guard.com"
-        alert.alertStyle = .informational
-        alert.runModal()
+    }    @objc func showAbout() {
+        MainWindowController.shared.showWindow()
+        MainWindowController.shared.showContentForItem(.about)
     }
+
 
     @objc func quitApp() {
         print("[OK] NextGuard DLP Agent shutting down")
