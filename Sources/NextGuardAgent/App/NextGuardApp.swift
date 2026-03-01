@@ -159,12 +159,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 for result in results {
                     await mgmtClient.reportIncident(
-                        policyId: result.policyId,
+                        policyId: result.ruleId,
                         channel: "clipboard",
                         severity: result.severity.rawValue,
                         action: result.action.rawValue,
                         matchCount: result.matches.count,
-                        details: "Clipboard scan: \(result.matches.count) matches for policy \(result.policyName)"
+                        details: "Clipboard scan: \(result.matches.count) matches for policy \(result.ruleName)"
                     )
                 }
                 print("[OK] Incidents reported to management console")
