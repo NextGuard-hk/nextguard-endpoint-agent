@@ -32,7 +32,7 @@ enum DLPSeverity: String, Codable, CaseIterable, Comparable {
     }
 
 enum DLPAction: String, Codable, CaseIterable {
-    case block, quarantine, audit, encrypt, notify, allow
+    case block, quarantine, audit, encrypt, notify, allow, warn, log
 }
 
 enum DLPChannel: String, Codable {
