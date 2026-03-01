@@ -28,7 +28,7 @@ class ManagementClient {
         let hostname = Host.current().localizedName ?? "unknown"
         let username = NSUserName()
         let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
-        let agentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.0"
+        let agentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
 
         let body: [String: Any] = [
             "hostname": hostname,
@@ -77,7 +77,7 @@ class ManagementClient {
             "status": "online",
             "hostname": Host.current().localizedName ?? "unknown",
             "username": NSUserName(),
-            "agentVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.0",
+            "agentVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0",
             "os": "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
             "uptime": ProcessInfo.processInfo.systemUptime
         ]
