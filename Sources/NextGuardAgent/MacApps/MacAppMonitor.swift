@@ -9,91 +9,86 @@ import Combine
 // MARK: - Supported App Bundle IDs
 public enum MonitoredApp: String, CaseIterable {
   // Microsoft Office 365
-  case word           = "com.microsoft.Word"
-  case excel          = "com.microsoft.Excel"
-  case powerpoint     = "com.microsoft.Powerpoint"
-  case outlook        = "com.microsoft.Outlook"
-  case onenote        = "com.microsoft.onenote.mac"
-  case onedrive       = "com.microsoft.OneDrive"
-  case teams          = "com.microsoft.teams"
-  case teams2         = "com.microsoft.teams2"
-  case sharepoint     = "com.microsoft.SharePoint"
-
+  case word = "com.microsoft.Word"
+  case excel = "com.microsoft.Excel"
+  case powerpoint = "com.microsoft.Powerpoint"
+  case outlook = "com.microsoft.Outlook"
+  case onenote = "com.microsoft.onenote.mac"
+  case onedrive = "com.microsoft.OneDrive"
+  case teams = "com.microsoft.teams"
+  case teams2 = "com.microsoft.teams2"
+  case sharepoint = "com.microsoft.SharePoint"
   // Messaging & Collaboration
-  case whatsapp       = "net.whatsapp.WhatsApp"
-  case wechat         = "com.tencent.xinWeChat"
-  case telegram       = "ru.keepcoder.Telegram"
-  case signal         = "org.whispersystems.signal-desktop"
-  case slack          = "com.tinyspeck.slackmacgap"
-  case zoom           = "us.zoom.xos"
-  case webex          = "Cisco-Systems.Spark"
-  case discord        = "com.hnc.Discord"
-  case lark           = "com.larksuite.lark"
-  case dingtalk       = "com.laiwang.DingTalk"
-
+  case whatsapp = "net.whatsapp.WhatsApp"
+  case wechat = "com.tencent.xinWeChat"
+  case telegram = "ru.keepcoder.Telegram"
+  case signal = "org.whispersystems.signal-desktop"
+  case slack = "com.tinyspeck.slackmacgap"
+  case zoom = "us.zoom.xos"
+  case webex = "Cisco-Systems.Spark"
+  case discord = "com.hnc.Discord"
+  case lark = "com.larksuite.lark"
+  case dingtalk = "com.laiwang.DingTalk"
   // Browsers
-  case safari         = "com.apple.Safari"
-  case chrome         = "com.google.Chrome"
-  case firefox        = "org.mozilla.firefox"
-  case edge           = "com.microsoft.edgemac"
-  case brave          = "com.brave.Browser"
-
+  case safari = "com.apple.Safari"
+  case chrome = "com.google.Chrome"
+  case firefox = "org.mozilla.firefox"
+  case edge = "com.microsoft.edgemac"
+  case brave = "com.brave.Browser"
   // Cloud Storage
-  case dropbox        = "com.getdropbox.dropbox"
-  case googleDrive    = "com.google.GoogleDrive"
-  case box            = "com.box.desktop"
-  case iCloud         = "com.apple.CloudDocs"
-
+  case dropbox = "com.getdropbox.dropbox"
+  case googleDrive = "com.google.GoogleDrive"
+  case box = "com.box.desktop"
+  case iCloud = "com.apple.CloudDocs"
   // Email Clients
-  case appleMail      = "com.apple.mail"
-  case spark          = "com.readdle.SparkDesktop"
-
+  case appleMail = "com.apple.mail"
+  case spark = "com.readdle.SparkDesktop"
   // Developer / Transfer Tools
-  case filezilla      = "org.filezilla-project.filezilla"
-  case cyberduck      = "ch.sudo.cyberduck"
-  case transmit       = "com.panic.Transmit"
+  case filezilla = "org.filezilla-project.filezilla"
+  case cyberduck = "ch.sudo.cyberduck"
+  case transmit = "com.panic.Transmit"
 
   public var displayName: String {
     switch self {
-    case .word:        return "Microsoft Word"
-    case .excel:       return "Microsoft Excel"
-    case .powerpoint:  return "Microsoft PowerPoint"
-    case .outlook:     return "Microsoft Outlook"
-    case .onenote:     return "Microsoft OneNote"
-    case .onedrive:    return "Microsoft OneDrive"
-    case .teams:       return "Microsoft Teams"
-    case .teams2:      return "Microsoft Teams (New)"
-    case .sharepoint:  return "Microsoft SharePoint"
-    case .whatsapp:    return "WhatsApp"
-    case .wechat:      return "WeChat"
-    case .telegram:    return "Telegram"
-    case .signal:      return "Signal"
-    case .slack:       return "Slack"
-    case .zoom:        return "Zoom"
-    case .webex:       return "Cisco Webex"
-    case .discord:     return "Discord"
-    case .lark:        return "Lark / Feishu"
-    case .dingtalk:    return "DingTalk"
-    case .safari:      return "Safari"
-    case .chrome:      return "Google Chrome"
-    case .firefox:     return "Mozilla Firefox"
-    case .edge:        return "Microsoft Edge"
-    case .brave:       return "Brave Browser"
-    case .dropbox:     return "Dropbox"
+    case .word: return "Microsoft Word"
+    case .excel: return "Microsoft Excel"
+    case .powerpoint: return "Microsoft PowerPoint"
+    case .outlook: return "Microsoft Outlook"
+    case .onenote: return "Microsoft OneNote"
+    case .onedrive: return "Microsoft OneDrive"
+    case .teams: return "Microsoft Teams"
+    case .teams2: return "Microsoft Teams (New)"
+    case .sharepoint: return "Microsoft SharePoint"
+    case .whatsapp: return "WhatsApp"
+    case .wechat: return "WeChat"
+    case .telegram: return "Telegram"
+    case .signal: return "Signal"
+    case .slack: return "Slack"
+    case .zoom: return "Zoom"
+    case .webex: return "Cisco Webex"
+    case .discord: return "Discord"
+    case .lark: return "Lark / Feishu"
+    case .dingtalk: return "DingTalk"
+    case .safari: return "Safari"
+    case .chrome: return "Google Chrome"
+    case .firefox: return "Mozilla Firefox"
+    case .edge: return "Microsoft Edge"
+    case .brave: return "Brave Browser"
+    case .dropbox: return "Dropbox"
     case .googleDrive: return "Google Drive"
-    case .box:         return "Box"
-    case .iCloud:      return "iCloud Drive"
-    case .appleMail:   return "Apple Mail"
-    case .spark:       return "Spark Mail"
-    case .filezilla:   return "FileZilla"
-    case .cyberduck:   return "Cyberduck"
-    case .transmit:    return "Transmit"
+    case .box: return "Box"
+    case .iCloud: return "iCloud Drive"
+    case .appleMail: return "Apple Mail"
+    case .spark: return "Spark Mail"
+    case .filezilla: return "FileZilla"
+    case .cyberduck: return "Cyberduck"
+    case .transmit: return "Transmit"
     }
   }
 
   public var category: AppCategory {
     switch self {
-    case .word, .excel, .powerpoint, .outlook, .onenote, .onenote, .sharepoint:
+    case .word, .excel, .powerpoint, .outlook, .onenote, .sharepoint:
       return .office365
     case .onedrive:
       return .cloudStorage
@@ -112,11 +107,11 @@ public enum MonitoredApp: String, CaseIterable {
 }
 
 public enum AppCategory: String, Codable {
-  case office365    = "Office365"
-  case messaging    = "Messaging"
-  case browser      = "Browser"
+  case office365 = "Office365"
+  case messaging = "Messaging"
+  case browser = "Browser"
   case cloudStorage = "CloudStorage"
-  case email        = "Email"
+  case email = "Email"
   case fileTransfer = "FileTransfer"
 }
 
@@ -133,7 +128,7 @@ public struct AppDLPEvent: Codable {
   public let fileName: String?
   public let destinationURL: String?
   public let recipientList: [String]?
-  public let contentSnippet: String?  // sanitised excerpt, no raw PII
+  public let contentSnippet: String?
   public let matchedRules: [String]
   public let action: DLPAction
   public let userName: String
@@ -175,55 +170,39 @@ public struct AppDLPEvent: Codable {
 }
 
 public enum AppEventType: String, Codable {
-  case fileSend          = "FILE_SEND"
-  case fileUpload        = "FILE_UPLOAD"
-  case fileDownload      = "FILE_DOWNLOAD"
-  case filePrint         = "FILE_PRINT"
-  case clipboardPaste    = "CLIPBOARD_PASTE"
-  case screenCapture     = "SCREEN_CAPTURE"
-  case messageSend       = "MESSAGE_SEND"
-  case emailSend         = "EMAIL_SEND"
-  case emailForward      = "EMAIL_FORWARD"
-  case emailAttachment   = "EMAIL_ATTACHMENT"
-  case fileSaveAs        = "FILE_SAVE_AS"
-  case fileShare         = "FILE_SHARE"
-  case cloudSync         = "CLOUD_SYNC"
-  case externalTransfer  = "EXTERNAL_TRANSFER"
+  case fileSend = "FILE_SEND"
+  case fileUpload = "FILE_UPLOAD"
+  case fileDownload = "FILE_DOWNLOAD"
+  case filePrint = "FILE_PRINT"
+  case clipboardPaste = "CLIPBOARD_PASTE"
+  case screenCapture = "SCREEN_CAPTURE"
+  case messageSend = "MESSAGE_SEND"
+  case emailSend = "EMAIL_SEND"
+  case emailForward = "EMAIL_FORWARD"
+  case emailAttachment = "EMAIL_ATTACHMENT"
+  case fileSaveAs = "FILE_SAVE_AS"
+  case fileShare = "FILE_SHARE"
+  case cloudSync = "CLOUD_SYNC"
+  case externalTransfer = "EXTERNAL_TRANSFER"
 }
 
-public enum DLPSeverity: String, Codable {
-  case critical = "CRITICAL"
-  case high     = "HIGH"
-  case medium   = "MEDIUM"
-  case low      = "LOW"
-  case info     = "INFO"
-}
-
-public enum DLPAction: String, Codable {
-  case allow   = "ALLOW"
-  case block   = "BLOCK"
-  case warn    = "WARN"
-  case log     = "LOG"
-  case encrypt = "ENCRYPT"
-  case quarantine = "QUARANTINE"
-}
+// NOTE: DLPSeverity and DLPAction are defined in DLPPolicyEngine.swift
+// Do not redefine them here to avoid ambiguity errors
 
 // MARK: - Mac App Monitor (Coordinator)
 public class MacAppMonitor: NSObject {
   public static let shared = MacAppMonitor()
-
   private var cancellables = Set<AnyCancellable>()
   private let eventQueue = DispatchQueue(label: "com.nextguard.appmonitor", qos: .utility)
   private let eventPublisher = PassthroughSubject<AppDLPEvent, Never>()
-
   public var onEvent: ((AppDLPEvent) -> Void)?
 
   // Sub-monitors
-  private let office365Monitor  = Office365Monitor()
-  private let messagingMonitor  = MessagingAppMonitor()
-  private let browserMonitor    = BrowserAppMonitor()
-  private let cloudMonitor      = CloudStorageMonitor()
-  private let emailMonitor      = EmailAppMonitor()
+  private let office365Monitor = Office365Monitor()
+  private let messagingMonitor = MessagingAppMonitor()
+  private let browserMonitor = BrowserAppMonitor()
+  private let cloudMonitor = CloudStorageMonitor()
+  private let emailMonitor = EmailAppMonitor()
   private let fileTransferMonitor = FileTransferMonitor()
 
   private override init() {
@@ -243,11 +222,11 @@ public class MacAppMonitor: NSObject {
 
   public func startMonitoring() {
     NSLog("[NextGuard] MacAppMonitor starting all app monitors")
-    office365Monitor.start   { [weak self] e in self?.eventPublisher.send(e) }
-    messagingMonitor.start   { [weak self] e in self?.eventPublisher.send(e) }
-    browserMonitor.start     { [weak self] e in self?.eventPublisher.send(e) }
-    cloudMonitor.start       { [weak self] e in self?.eventPublisher.send(e) }
-    emailMonitor.start       { [weak self] e in self?.eventPublisher.send(e) }
+    office365Monitor.start { [weak self] e in self?.eventPublisher.send(e) }
+    messagingMonitor.start { [weak self] e in self?.eventPublisher.send(e) }
+    browserMonitor.start { [weak self] e in self?.eventPublisher.send(e) }
+    cloudMonitor.start { [weak self] e in self?.eventPublisher.send(e) }
+    emailMonitor.start { [weak self] e in self?.eventPublisher.send(e) }
     fileTransferMonitor.start{ [weak self] e in self?.eventPublisher.send(e) }
     registerWorkspaceNotifications()
   }
