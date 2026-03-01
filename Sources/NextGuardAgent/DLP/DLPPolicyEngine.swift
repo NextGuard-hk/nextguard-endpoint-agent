@@ -13,7 +13,7 @@ import os.log
 import NaturalLanguage
 
 // MARK: - DLP Rule Severity & Action (ISO 27001 A.8.12 classifications)
-enum DLPSeverity: String, Codable, CaseIterable, Comparable {
+public enum DLPSeverity: String, Codable, CaseIterable, Comparable {
         case critical, high, medium, low, info
 
         private var sortOrder: Int {
@@ -31,11 +31,11 @@ enum DLPSeverity: String, Codable, CaseIterable, Comparable {
         }
     }
 
-enum DLPAction: String, Codable, CaseIterable {
+public enum DLPAction: String, Codable, CaseIterable {
     case block, quarantine, audit, encrypt, notify, allow, warn, log
 }
 
-enum DLPChannel: String, Codable {
+public enum DLPChannel: String, Codable {
     case file, clipboard, network, usb, print, screenshot, email, cloud, airdrop
 }
 
