@@ -26,7 +26,7 @@ public enum DLPSeverity: String, Codable, CaseIterable, Comparable {
             }
         }
 
-        static func < (lhs: DLPSeverity, rhs: DLPSeverity) -> Bool {
+        public static func < (lhs: DLPSeverity, rhs: DLPSeverity) -> Bool {
             return lhs.sortOrder < rhs.sortOrder
         }
     }
