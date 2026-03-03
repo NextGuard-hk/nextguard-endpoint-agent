@@ -7,7 +7,7 @@ import PackageDescription
 let package = Package(
   name: "NextGuardAgent",
   platforms: [
-    .macOS(.v14) // macOS 14 Sonoma minimum, supports macOS 15 Sequoia+
+    .macOS(.v14)
   ],
   products: [
     .executable(
@@ -15,9 +15,7 @@ let package = Package(
       targets: ["NextGuardAgent"]
     )
   ],
-  dependencies: [
-    // No external dependencies - uses Apple frameworks only for security
-  ],
+  dependencies: [],
   targets: [
     .executableTarget(
       name: "NextGuardAgent",
@@ -35,14 +33,8 @@ let package = Package(
         .linkedFramework("DiskArbitration"),
         .linkedFramework("Security"),
         .linkedFramework("CoreServices"),
-        .linkedFramework("NaturalLanguage"),
-        .unsafeFlags(["-F/System/Library/PrivateFrameworks"])
+        .linkedFramework("NaturalLanguage")
       ]
-    ),
-    .testTarget(
-      name: "NextGuardAgentTests",
-      dependencies: ["NextGuardAgent"],
-      path: "Tests/NextGuardAgentTests"
     )
   ]
 )
