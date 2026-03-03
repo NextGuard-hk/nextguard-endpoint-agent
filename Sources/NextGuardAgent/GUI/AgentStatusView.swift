@@ -258,9 +258,3 @@ struct AgentStatusView: View {
         return "\(count) active \(count == 1 ? "rule" : "rules") enforced"
     }
 }
-
-#Preview {
-    AgentStatusView()
-        .environmentObject(PolicyStore.shared)
-        .frame(width: 360, height: 350)
-}
