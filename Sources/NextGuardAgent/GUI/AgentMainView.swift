@@ -10,19 +10,19 @@ import SwiftUI
 struct AgentMainView: View {
     @EnvironmentObject var policyStore: PolicyStore
     @State private var selectedTab: AgentTab = .status
-    
+
     enum AgentTab {
         case status, policies, settings
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
             headerView
-            
+
             // Tab Bar
             tabBar
-            
+
             // Content
             Group {
                 switch selectedTab {
@@ -42,9 +42,8 @@ struct AgentMainView: View {
         .frame(width: 360, height: 480)
         .background(Color(NSColor.windowBackgroundColor))
     }
-    
+
     // MARK: - Header
-    
     var headerView: some View {
         HStack(spacing: 10) {
             // Logo
@@ -60,7 +59,6 @@ struct AgentMainView: View {
                     .foregroundColor(.white)
                     .font(.system(size: 18, weight: .bold))
             }
-            
             VStack(alignment: .leading, spacing: 2) {
                 Text("NextGuard Agent")
                     .font(.system(size: 14, weight: .bold))
@@ -68,9 +66,7 @@ struct AgentMainView: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
-            
             Spacer()
-            
             // Connection Status Pill
             connectionBadge
         }
@@ -78,7 +74,7 @@ struct AgentMainView: View {
         .padding(.vertical, 12)
         .background(Color(NSColor.controlBackgroundColor))
     }
-    
+
     var connectionBadge: some View {
         HStack(spacing: 4) {
             Circle()
@@ -92,14 +88,11 @@ struct AgentMainView: View {
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(policyStore.agentStatus.isConnectedToConsole
-                      ? Color.green.opacity(0.12)
-                      : Color.orange.opacity(0.12))
+                .fill(policyStore.agentStatus.isConnectedToConsole ? Color.green.opacity(0.12) : Color.orange.opacity(0.12))
         )
     }
-    
+
     // MARK: - Tab Bar
-    
     var tabBar: some View {
         HStack(spacing: 0) {
             tabButton(title: "Status", icon: "shield.checkered", tab: .status)
@@ -109,7 +102,7 @@ struct AgentMainView: View {
         .background(Color(NSColor.controlBackgroundColor))
         .overlay(Divider(), alignment: .bottom)
     }
-    
+
     func tabButton(title: String, icon: String, tab: AgentTab) -> some View {
         Button(action: { selectedTab = tab }) {
             VStack(spacing: 3) {
@@ -122,9 +115,7 @@ struct AgentMainView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .background(
-                selectedTab == tab
-                    ? Color.accentColor.opacity(0.1)
-                    : Color.clear
+                selectedTab == tab ? Color.accentColor.opacity(0.1) : Color.clear
             )
         }
         .buttonStyle(.plain)
@@ -132,13 +123,12 @@ struct AgentMainView: View {
 }
 
 // MARK: - Settings View
-
 struct AgentSettingsView: View {
     @EnvironmentObject var policyStore: PolicyStore
     @State private var consoleUrl: String = ""
     @State private var tenantId: String = ""
     @State private var showSaved = false
-    
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -151,7 +141,6 @@ struct AgentSettingsView: View {
                         TextField("https://next-guard.com", text: $consoleUrl)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 12))
-                        
                         Label("Tenant ID", systemImage: "person.2")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.secondary)
@@ -161,7 +150,7 @@ struct AgentSettingsView: View {
                             .font(.system(size: 12))
                     }
                 }
-                
+
                 // Sync
                 settingsSection(title: "Sync") {
                     HStack {
@@ -186,7 +175,7 @@ struct AgentSettingsView: View {
                         .controlSize(.small)
                     }
                 }
-                
+
                 // Save Button
                 Button(action: saveSettings) {
                     HStack {
@@ -210,7 +199,7 @@ struct AgentSettingsView: View {
             tenantId = policyStore.agentStatus.tenantId ?? ""
         }
     }
-    
+
     func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
@@ -221,21 +210,11 @@ struct AgentSettingsView: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
     }
-    
+
     func saveSettings() {
         policyStore.agentStatus.consoleUrl = consoleUrl
         policyStore.agentStatus.tenantId = tenantId.isEmpty ? nil : tenantId
-        
-        withAnimation {
-            showSaved = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            showSaved = false
-        }
+        withAnimation { showSaved = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showSaved = false }
     }
-}
-
-#Preview {
-    AgentMainView()
-        .environmentObject(PolicyStore.shared)
 }
