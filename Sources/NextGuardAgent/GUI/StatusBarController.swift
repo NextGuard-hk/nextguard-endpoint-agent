@@ -49,9 +49,10 @@ struct StatusBarIconHelper {
     }
 
     /// Animate scanning state with alternating icons
+    /// Called as: StatusBarIconHelper.startScanningAnimation(button: button)
     /// Returns the Timer so caller can invalidate it when done
     @discardableResult
-    static func startScanningAnimation(_ button: NSStatusBarButton) -> Timer {
+    static func startScanningAnimation(button: NSStatusBarButton) -> Timer {
         var toggle = false
         let timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { _ in
             toggle.toggle()
