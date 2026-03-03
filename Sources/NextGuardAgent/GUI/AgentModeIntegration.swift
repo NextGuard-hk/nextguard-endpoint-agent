@@ -1,10 +1,10 @@
 //
-//  AgentModeIntegration.swift
-//  NextGuardAgent
+// AgentModeIntegration.swift
+// NextGuardAgent
 //
-//  Integration layer: connects AgentModeManager + LocalPolicyEngine
-//  to the GUI views (Dashboard, Policies, Settings, Sidebar)
-//  This file provides agent-mode-aware replacement views
+// Integration layer: connects AgentModeManager + LocalPolicyEngine
+// to the GUI views (Dashboard, Policies, Settings, Sidebar)
+// This file provides agent-mode-aware replacement views
 //
 
 import SwiftUI
@@ -96,17 +96,18 @@ struct AgentSettingsContentView: View {
     }
 
     private var agentModeBadge: some View {
-        HStack(spacing: 6) {
+        let isManaged = modeManager.mode == AgentMode.managed
+        return HStack(spacing: 6) {
             Circle()
-                .fill(modeManager.mode == .managed ? Color.blue : Color.green)
+                .fill(isManaged ? Color.blue : Color.green)
                 .frame(width: 8, height: 8)
-            Text(modeManager.mode == .managed ? "Managed" : "Standalone")
+            Text(isManaged ? "Managed" : "Standalone")
                 .font(.caption).fontWeight(.medium)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(Capsule().fill(
-            modeManager.mode == .managed ?
-                Color.blue.opacity(0.12) : Color.green.opacity(0.12)
+            isManaged ?
+            Color.blue.opacity(0.12) : Color.green.opacity(0.12)
         ))
     }
 
@@ -161,13 +162,14 @@ struct AgentSettingsContentView: View {
 
     // MARK: - About Section
     private var aboutSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let isManaged = modeManager.mode == AgentMode.managed
+        return VStack(alignment: .leading, spacing: 10) {
             Text("About NextGuard Agent").font(.headline).padding(.top, 16)
 
             VStack(spacing: 0) {
                 aboutRow("Version", "1.0.0")
                 Divider()
-                aboutRow("Agent Mode", modeManager.mode == .managed ? "Managed" : "Standalone")
+                aboutRow("Agent Mode", isManaged ? "Managed" : "Standalone")
                 Divider()
                 if let device = modeManager.enrolledDevice {
                     aboutRow("Tenant", device.tenantName)
@@ -200,15 +202,16 @@ struct AgentModeDashboardOverlay: View {
     @StateObject private var engine = LocalPolicyEngine.shared
 
     var body: some View {
+        let isManaged = modeManager.mode == AgentMode.managed
         VStack(spacing: 12) {
             // Agent Mode Banner
             HStack(spacing: 10) {
-                Image(systemName: modeManager.mode == .managed ? "building.2.fill" : "laptopcomputer")
-                    .foregroundColor(modeManager.mode == .managed ? .blue : .green)
+                Image(systemName: isManaged ? "building.2.fill" : "laptopcomputer")
+                    .foregroundColor(isManaged ? .blue : .green)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(modeManager.mode == .managed ? "Managed Mode" : "Standalone Mode")
+                    Text(isManaged ? "Managed Mode" : "Standalone Mode")
                         .font(.subheadline.bold())
-                    if modeManager.mode == .managed {
+                    if isManaged {
                         Text(modeManager.enrolledDevice?.tenantName ?? "Organisation")
                             .font(.caption).foregroundColor(.secondary)
                     } else {
@@ -217,8 +220,7 @@ struct AgentModeDashboardOverlay: View {
                     }
                 }
                 Spacer()
-
-                if modeManager.mode == .managed {
+                if isManaged {
                     // Console reachability
                     HStack(spacing: 4) {
                         Circle()
@@ -231,12 +233,12 @@ struct AgentModeDashboardOverlay: View {
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(
-                modeManager.mode == .managed ?
-                    Color.blue.opacity(0.06) : Color.green.opacity(0.06)
+                isManaged ?
+                Color.blue.opacity(0.06) : Color.green.opacity(0.06)
             ))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-                modeManager.mode == .managed ?
-                    Color.blue.opacity(0.15) : Color.green.opacity(0.15),
+                isManaged ?
+                Color.blue.opacity(0.15) : Color.green.opacity(0.15),
                 lineWidth: 1
             ))
 
@@ -266,23 +268,23 @@ struct SidebarAgentBadge: View {
     @StateObject private var modeManager = AgentModeManager.shared
 
     var body: some View {
+        let isManaged = modeManager.mode == AgentMode.managed
         VStack(spacing: 4) {
             Divider()
             HStack(spacing: 6) {
-                Image(systemName: modeManager.mode == .managed ? "building.2.fill" : "laptopcomputer")
+                Image(systemName: isManaged ? "building.2.fill" : "laptopcomputer")
                     .font(.caption2)
-                    .foregroundColor(modeManager.mode == .managed ? .blue : .green)
-                Text(modeManager.mode == .managed ? "Managed" : "Standalone")
+                    .foregroundColor(isManaged ? .blue : .green)
+                Text(isManaged ? "Managed" : "Standalone")
                     .font(.caption2).fontWeight(.medium)
-                    .foregroundColor(modeManager.mode == .managed ? .blue : .green)
+                    .foregroundColor(isManaged ? .blue : .green)
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(Capsule().fill(
-                modeManager.mode == .managed ?
-                    Color.blue.opacity(0.1) : Color.green.opacity(0.1)
+                isManaged ?
+                Color.blue.opacity(0.1) : Color.green.opacity(0.1)
             ))
-
-            if modeManager.mode == .managed, let name = modeManager.enrolledDevice?.tenantName {
+            if isManaged, let name = modeManager.enrolledDevice?.tenantName {
                 Text(name)
                     .font(.caption2)
                     .foregroundColor(.secondary)
