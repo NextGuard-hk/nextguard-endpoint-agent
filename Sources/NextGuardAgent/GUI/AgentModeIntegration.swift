@@ -301,6 +301,9 @@ class OfflineQueueManager {
     func enterOfflineMode() {
         print("[OfflineQueue] Entered offline mode - caching incidents locally")
     }
+        func enqueueAuditEvent(_ entry: TamperAuditEntry) {
+        print("[OfflineQueue] Queued audit event: \(entry.action)")
+    }
     func flushQueueIfNeeded() {
         print("[OfflineQueue] Flushing queued incidents to Console")
     }
