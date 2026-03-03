@@ -28,7 +28,7 @@ struct DLPPolicy: Codable, Identifiable {
   let excludedUsers: [String]
   let createdAt: Date
   let updatedAt: Date
-  var source: PolicySource
+  var source: PolicySource = .console
 }
 
 enum PolicySource: String, Codable {
