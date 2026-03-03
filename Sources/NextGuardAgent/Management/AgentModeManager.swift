@@ -1,11 +1,11 @@
 //
-//  AgentModeManager.swift
-//  NextGuardAgent
+// AgentModeManager.swift
+// NextGuardAgent
 //
-//  Dual-State Architecture: Standalone (Unjoined) vs Managed (Tenant-Joined)
-//  Inspired by Windows Domain Join / Intune Device Enrollment model
+// Dual-State Architecture: Standalone (Unjoined) vs Managed (Tenant-Joined)
+// Inspired by Windows Domain Join / Intune Device Enrollment model
 //
-//  State Machine:
+// State Machine:
 //    .standalone  - local admin control only, full GUI access
 //    .managed     - Console has override authority, GUI settings greyed-out
 //
@@ -15,31 +15,28 @@ import Combine
 import CryptoKit
 
 // MARK: - Agent Mode
-
 enum AgentMode: String, Codable {
     case standalone = "standalone"   // Unjoined - local control
     case managed    = "managed"      // Tenant-joined - Console override
 }
 
 // MARK: - Enrollment State
-
 enum EnrollmentState: String, Codable {
-    case unenrolled   = "unenrolled"
-    case enrolling    = "enrolling"    // token submitted, awaiting cert
-    case enrolled     = "enrolled"     // mTLS cert issued, heartbeat active
-    case suspended    = "suspended"    // Console suspended this device
-    case unenrolling  = "unenrolling"  // Leave in progress
+    case unenrolled  = "unenrolled"
+    case enrolling   = "enrolling"    // token submitted, awaiting cert
+    case enrolled    = "enrolled"     // mTLS cert issued, heartbeat active
+    case suspended   = "suspended"    // Console suspended this device
+    case unenrolling = "unenrolling"  // Leave in progress
 }
 
 // MARK: - Enrolled Device Info
-
 struct EnrolledDeviceInfo: Codable {
-    var deviceId: String           // UUID assigned by Console on enrollment
+    var deviceId: String              // UUID assigned by Console on enrollment
     var tenantId: String
     var tenantName: String
     var consoleUrl: String
     var enrolledAt: Date
-    var enrolledBy: String         // admin email who issued the token
+    var enrolledBy: String            // admin email who issued the token
     var clientCertThumbprint: String  // SHA256 of issued mTLS cert
     var lastPolicySync: Date?
     var uninstallPasswordHash: String? // SHA256 of Console-issued bypass password
@@ -47,18 +44,17 @@ struct EnrolledDeviceInfo: Codable {
 }
 
 enum PolicyLockLevel: String, Codable {
-    case none      = "none"      // Level 3 (local) still active
-    case override  = "override"  // Level 1 overrides but local still visible
-    case locked    = "locked"    // Level 1 fully locks; local config frozen
+    case none     = "none"      // Level 3 (local) still active
+    case override_ = "override" // Level 1 overrides but local still visible
+    case locked   = "locked"    // Level 1 fully locks; local config frozen
 }
 
 // MARK: - Agent Mode Manager
-
 class AgentModeManager: ObservableObject {
     static let shared = AgentModeManager()
 
-    @Published var mode: AgentMode = .standalone
-    @Published var enrollmentState: EnrollmentState = .unenrolled
+    @Published var mode: AgentMode = AgentMode.standalone
+    @Published var enrollmentState: EnrollmentState = EnrollmentState.unenrolled
     @Published var enrolledDevice: EnrolledDeviceInfo? = nil
     @Published var isConsoleReachable: Bool = false
     @Published var managedSettingsLocked: Bool = false
@@ -77,7 +73,6 @@ class AgentModeManager: ObservableObject {
     }
 
     // MARK: - Persist / Load
-
     private func loadPersistedState() {
         if let modeRaw = UserDefaults.standard.string(forKey: storageKey),
            let savedMode = AgentMode(rawValue: modeRaw) {
@@ -86,8 +81,8 @@ class AgentModeManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: deviceInfoKey),
            let info = try? JSONDecoder().decode(EnrolledDeviceInfo.self, from: data) {
             enrolledDevice = info
-            enrollmentState = .enrolled
-            managedSettingsLocked = info.policyLockLevel == .locked
+            enrollmentState = EnrollmentState.enrolled
+            managedSettingsLocked = info.policyLockLevel == PolicyLockLevel.locked
         }
         localAdminPasswordHash = UserDefaults.standard.string(forKey: adminPwHashKey)
     }
@@ -101,7 +96,6 @@ class AgentModeManager: ObservableObject {
     }
 
     // MARK: - Standalone Mode: Local Admin Password
-
     /// Set a local admin password (hashed with SHA256) for self-protection
     func setLocalAdminPassword(_ password: String) {
         let hash = sha256(password)
@@ -121,15 +115,14 @@ class AgentModeManager: ObservableObject {
     }
 
     // MARK: - Managed Mode: Enrollment
-
     /// Begin enrollment: called after token is validated by EnrollmentManager
     func transitionToManaged(deviceInfo: EnrolledDeviceInfo) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.enrolledDevice = deviceInfo
-            self.mode = .managed
-            self.enrollmentState = .enrolled
-            self.managedSettingsLocked = deviceInfo.policyLockLevel == .locked
+            self.mode = AgentMode.managed
+            self.enrollmentState = EnrollmentState.enrolled
+            self.managedSettingsLocked = deviceInfo.policyLockLevel == PolicyLockLevel.locked
             self.persistState()
             self.startHeartbeatMonitor()
             NotificationCenter.default.post(name: .agentModeChanged, object: AgentMode.managed)
@@ -152,7 +145,7 @@ class AgentModeManager: ObservableObject {
                 return
             }
         }
-        enrollmentState = .unenrolling
+        enrollmentState = EnrollmentState.unenrolling
         // Notify Console
         Task {
             await notifyConsoleLeave(deviceId: info.deviceId, consoleUrl: info.consoleUrl)
@@ -165,8 +158,8 @@ class AgentModeManager: ObservableObject {
 
     private func transitionToStandalone() {
         enrolledDevice = nil
-        mode = .standalone
-        enrollmentState = .unenrolled
+        mode = AgentMode.standalone
+        enrollmentState = EnrollmentState.unenrolled
         managedSettingsLocked = false
         stopHeartbeatMonitor()
         UserDefaults.standard.removeObject(forKey: deviceInfoKey)
@@ -176,18 +169,16 @@ class AgentModeManager: ObservableObject {
     }
 
     // MARK: - Policy Lock Level (set by Console)
-
     func applyPolicyLockLevel(_ level: PolicyLockLevel) {
         guard var info = enrolledDevice else { return }
         info.policyLockLevel = level
         enrolledDevice = info
-        managedSettingsLocked = level == .locked
+        managedSettingsLocked = level == PolicyLockLevel.locked
         persistState()
         print("[AgentMode] Policy lock level set to: \(level.rawValue)")
     }
 
     // MARK: - Uninstall/Bypass Password (set by Console)
-
     func setUninstallPassword(_ password: String) {
         guard var info = enrolledDevice else { return }
         info.uninstallPasswordHash = sha256(password)
@@ -202,7 +193,6 @@ class AgentModeManager: ObservableObject {
     }
 
     // MARK: - Console Reachability Heartbeat
-
     func startHeartbeatMonitor() {
         stopHeartbeatMonitor()
         heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -234,19 +224,18 @@ class AgentModeManager: ObservableObject {
     }
 
     // MARK: - Console Remote Commands
-
     /// Called when Console pushes a remote command via polling / push
     func handleRemoteCommand(_ command: ConsoleRemoteCommand) {
         print("[AgentMode] Remote command received: \(command.type.rawValue)")
         switch command.type {
         case .lockSettings:
-            applyPolicyLockLevel(.locked)
+            applyPolicyLockLevel(PolicyLockLevel.locked)
         case .unlockSettings:
-            applyPolicyLockLevel(.none)
+            applyPolicyLockLevel(PolicyLockLevel.none)
         case .forceLeave:
             transitionToStandalone()
         case .suspend:
-            enrollmentState = .suspended
+            enrollmentState = EnrollmentState.suspended
             persistState()
         case .setUninstallPassword:
             if let pw = command.payload { setUninstallPassword(pw) }
@@ -257,7 +246,6 @@ class AgentModeManager: ObservableObject {
     }
 
     // MARK: - Helpers
-
     private func sha256(_ input: String) -> String {
         let data = Data(input.utf8)
         let hash = SHA256.hash(data: data)
@@ -269,15 +257,14 @@ class AgentModeManager: ObservableObject {
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        try? await URLSession.shared.data(for: req)
+        _ = try? await URLSession.shared.data(for: req)
     }
 
     // MARK: - Computed Helpers
-
-    var isManaged: Bool { mode == .managed }
-    var isStandalone: Bool { mode == .standalone }
+    var isManaged: Bool { mode == AgentMode.managed }
+    var isStandalone: Bool { mode == AgentMode.standalone }
     var canEditLocalSettings: Bool {
-        mode == .standalone || enrolledDevice?.policyLockLevel == .none
+        mode == AgentMode.standalone || enrolledDevice?.policyLockLevel == PolicyLockLevel.none
     }
     var managedByOrgMessage: String {
         if let name = enrolledDevice?.tenantName {
@@ -288,15 +275,14 @@ class AgentModeManager: ObservableObject {
 }
 
 // MARK: - Console Remote Command Model
-
 struct ConsoleRemoteCommand: Codable {
     enum CommandType: String, Codable {
-        case lockSettings       = "lock_settings"
-        case unlockSettings     = "unlock_settings"
-        case forceLeave         = "force_leave"
-        case suspend            = "suspend"
+        case lockSettings = "lock_settings"
+        case unlockSettings = "unlock_settings"
+        case forceLeave = "force_leave"
+        case suspend = "suspend"
         case setUninstallPassword = "set_uninstall_password"
-        case networkIsolation   = "network_isolation"
+        case networkIsolation = "network_isolation"
     }
     let type: CommandType
     let payload: String?
@@ -305,7 +291,6 @@ struct ConsoleRemoteCommand: Codable {
 }
 
 // MARK: - Notification Names
-
 extension Notification.Name {
     static let agentModeChanged = Notification.Name("com.nextguard.agent.modeChanged")
     static let consolePolicyUpdated = Notification.Name("com.nextguard.agent.policyUpdated")
