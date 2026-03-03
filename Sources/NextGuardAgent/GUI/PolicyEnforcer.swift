@@ -89,15 +89,24 @@ class PolicyEnforcer {
         guard PolicyStore.shared.policies.isEmpty || isDefaultPolicies() else { return }
 
         let guiRules: [GUIPolicyRule] = engineRules.map { rule in
-            GUIPolicyRule(
+            // Map DLPAction enum to RuleAction
+            let guiAction: RuleAction
+            switch rule.action {
+            case .block, .quarantine: guiAction = .block
+            case .audit, .warn, .log, .notify: guiAction = .audit
+            case .allow, .encrypt: guiAction = .allow
+            }
+            // Map DLPChannel array to destination strings
+            let destinations = rule.channels.map { $0.rawValue }
+            return GUIPolicyRule(
                 id: UUID(uuidString: rule.id) ?? UUID(),
                 name: rule.name,
-                description: rule.description ?? "",
+                description: rule.description,
                 enabled: rule.enabled,
-                action: rule.action == "block" ? .block : rule.action == "audit" ? .audit : .allow,
-                keywords: rule.keywords ?? [],
-                fileTypes: rule.fileTypes ?? [],
-                destinations: rule.channels ?? []
+                action: guiAction,
+                keywords: rule.keywords,
+                fileTypes: [],
+                destinations: destinations
             )
         }
 
