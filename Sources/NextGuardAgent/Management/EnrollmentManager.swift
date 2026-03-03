@@ -14,6 +14,7 @@
 
 import Foundation
 import Security
+import Combine
 import CryptoKit
 
 // MARK: - Enrollment Result
@@ -54,7 +55,7 @@ struct EnrollmentResponse: Codable {
 
 // MARK: - Enrollment Manager
 
-class EnrollmentManager {
+import Crypclass EnrollmentManager: ObservableObject {toKit import Combine
     static let shared = EnrollmentManager()
     private init() {}
 
