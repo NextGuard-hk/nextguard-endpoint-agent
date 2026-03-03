@@ -11,10 +11,9 @@
 import Foundation
 import AppKit
 import os.log
-import UserNotifications
 
 // MARK: - Clipboard Monitor
-final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
+final class ClipboardMonitor {
     static let shared = ClipboardMonitor()
 
     private let logger = Logger(subsystem: "com.nextguard.agent", category: "ClipboardMonitor")
@@ -26,83 +25,14 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
     private(set) var isActive: Bool = false
     private var totalInspected: Int = 0
     private var totalBlocked: Int = 0
-    private var notificationsConfigured: Bool = false
 
     private let pollInterval: TimeInterval = 0.5
 
-    private override init() {
-        super.init()
-        // NOTE: Do NOT call setupNotifications() here.
-        // static let shared init runs via dispatch_once which may not be on main thread.
-        // Notification setup is deferred to startMonitoring() on main thread.
-    }
-
-    // MARK: - Notification Setup (must be called on main thread)
-    private func setupNotifications() {
-        guard !notificationsConfigured else { return }
-        notificationsConfigured = true
-
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                print("[OK] Notification permission granted")
-            } else {
-                print("[WARN] Notification permission denied: \(error?.localizedDescription ?? "unknown")")
-            }
-        }
-
-        let viewAction = UNNotificationAction(identifier: "VIEW_DETAILS", title: "View Details", options: .foreground)
-        let dismissAction = UNNotificationAction(identifier: "DISMISS", title: "Dismiss", options: .destructive)
-
-        let blockCategory = UNNotificationCategory(
-            identifier: "DLP_BLOCK",
-            actions: [viewAction, dismissAction],
-            intentIdentifiers: [],
-            options: .customDismissAction
-        )
-        let auditCategory = UNNotificationCategory(
-            identifier: "DLP_AUDIT",
-            actions: [viewAction, dismissAction],
-            intentIdentifiers: [],
-            options: .customDismissAction
-        )
-
-        center.setNotificationCategories([blockCategory, auditCategory])
-    }
-
-    // MARK: - UNUserNotificationCenterDelegate
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                willPresent notification: UNNotification,
-                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound, .list])
-    }
-
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                didReceive response: UNNotificationResponse,
-                                withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.actionIdentifier == "VIEW_DETAILS" {
-            DispatchQueue.main.async {
-                MainWindowController.shared.showWindow()
-            }
-        }
-        completionHandler()
-    }
+    private init() {}
 
     // MARK: - Start / Stop
     func startMonitoring() {
         guard !isActive else { return }
-
-        // Setup notifications on main thread (deferred from init)
-        if Thread.isMainThread {
-            setupNotifications()
-        } else {
-            DispatchQueue.main.sync {
-                setupNotifications()
-            }
-        }
-
         lastChangeCount = NSPasteboard.general.changeCount
         pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             self?.checkClipboard()
@@ -153,19 +83,17 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
             clearClipboard()
             totalBlocked += 1
 
-            sendNotification(
+            showFloatingNotification(
                 title: "NextGuard DLP - Content BLOCKED",
-                body: "Sensitive data blocked in \(sourceApp). Rules: \(ruleNames) | Severity: \(severities) | Matches: \(matchCount). Clipboard cleared.",
-                category: "DLP_BLOCK",
+                message: "Sensitive data blocked in \(sourceApp).\nRules: \(ruleNames) | Matches: \(matchCount)\nClipboard has been cleared.",
                 critical: true
             )
 
             print("  Result: CLIPBOARD CLEARED - content blocked")
         } else {
-            sendNotification(
+            showFloatingNotification(
                 title: "NextGuard DLP - Sensitive Data Detected",
-                body: "Sensitive data detected in \(sourceApp) (audit mode). Rules: \(ruleNames) | Severity: \(severities) | Matches: \(matchCount)",
-                category: "DLP_AUDIT",
+                message: "Sensitive data in \(sourceApp) (audit mode).\nRules: \(ruleNames) | Matches: \(matchCount)",
                 critical: false
             )
 
@@ -199,49 +127,53 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    // MARK: - macOS Native Notification (Non-Blocking Push)
-    private func sendNotification(title: String, body: String, category: String, critical: Bool) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.categoryIdentifier = category
-        content.sound = critical ? .defaultCritical : .default
-
-        content.userInfo = [
-            "type": "dlp_alert",
-            "critical": critical,
-            "timestamp": ISO8601DateFormatter().string(from: Date())
-        ]
-
-        let request = UNNotificationRequest(
-            identifier: "dlp-\(UUID().uuidString)",
-            content: content,
-            trigger: nil
-        )
-
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("[WARN] Notification failed: \(error.localizedDescription)")
-                self.showFallbackAlert(title: title, message: body, critical: critical)
-            }
-        }
-    }
-
-    // MARK: - Fallback Alert (only if UNNotification fails)
-    private func showFallbackAlert(title: String, message: String, critical: Bool) {
+    // MARK: - Floating Notification Panel (Non-Blocking, no bundle required)
+    private func showFloatingNotification(title: String, message: String, critical: Bool) {
         DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.messageText = title
-            alert.informativeText = message
-            alert.alertStyle = critical ? .critical : .warning
-            if critical {
-                alert.icon = NSImage(systemSymbolName: "xmark.shield.fill", accessibilityDescription: "Blocked")
-            } else {
-                alert.icon = NSImage(systemSymbolName: "exclamationmark.shield.fill", accessibilityDescription: "Warning")
+            let panel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 420, height: 140),
+                styleMask: [.titled, .closable, .nonactivatingPanel, .hudWindow],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = .floating
+            panel.isFloatingPanel = true
+            panel.hidesOnDeactivate = false
+            panel.title = title
+
+            // Position top-right of screen
+            if let screen = NSScreen.main {
+                let screenFrame = screen.visibleFrame
+                let x = screenFrame.maxX - 440
+                let y = screenFrame.maxY - 160
+                panel.setFrameOrigin(NSPoint(x: x, y: y))
             }
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+
+            let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 100))
+
+            // Icon
+            let iconView = NSImageView(frame: NSRect(x: 15, y: 40, width: 40, height: 40))
+            let iconName = critical ? "xmark.shield.fill" : "exclamationmark.shield.fill"
+            iconView.image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)
+            iconView.contentTintColor = critical ? .systemRed : .systemOrange
+            contentView.addSubview(iconView)
+
+            // Message label
+            let label = NSTextField(wrappingLabelWithString: message)
+            label.frame = NSRect(x: 65, y: 10, width: 340, height: 80)
+            label.font = NSFont.systemFont(ofSize: 12)
+            label.isEditable = false
+            label.isBordered = false
+            label.drawsBackground = false
+            contentView.addSubview(label)
+
+            panel.contentView = contentView
+            panel.orderFrontRegardless()
+
+            // Auto-dismiss after 6 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                panel.close()
+            }
         }
     }
 }
