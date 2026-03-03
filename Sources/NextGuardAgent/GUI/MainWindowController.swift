@@ -3,7 +3,7 @@
 //  NextGuardAgent
 //
 //  Main application window + sidebar navigation
-//  NOTE: Uses PolicyStore.shared (defined in PolicyStore.swift)
+//  Uses PolicyStore.shared, AgentModeManager, LocalPolicyEngine
 //  AgentStatusInfo, RuleAction, GUIPolicyRule defined in PolicyStore.swift
 //
 
@@ -105,6 +105,8 @@ struct MainContentView: View {
       }
       .listStyle(.sidebar)
       Spacer()
+      // Agent Mode Badge
+      SidebarAgentBadge()
       VStack(spacing: 4) {
         Divider()
         Text("v\(policyStore.agentStatus.agentVersion)")
@@ -138,6 +140,9 @@ struct DashboardTabView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 20) {
+        // Agent Mode Overlay
+        AgentModeDashboardOverlay()
+
         // Protection Status Card
         HStack(spacing: 20) {
           ZStack {
@@ -158,8 +163,8 @@ struct DashboardTabView: View {
             Text(policyStore.agentStatus.isProtected ? "Protection Active" : "Protection Paused")
               .font(.title2.bold())
             Text(policyStore.agentStatus.isConnectedToConsole
-              ? "Connected to NextGuard Console"
-              : "Offline Mode — Local Policies Active")
+                 ? "Connected to NextGuard Console"
+                 : "Offline Mode \u{2014} Local Policies Active")
               .font(.subheadline).foregroundColor(.secondary)
             if let sync = policyStore.agentStatus.lastSyncTime {
               Label("Synced \(sync, style: .relative)", systemImage: "arrow.triangle.2.circlepath")
@@ -180,17 +185,17 @@ struct DashboardTabView: View {
         // Stats Grid
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 16) {
           DashStatCard(title: "Active Policies",
-            value: "\(policyStore.policies.filter { $0.enabled }.count)",
-            icon: "doc.text.fill", color: .blue)
+                       value: "\(policyStore.policies.filter { $0.enabled }.count)",
+                       icon: "doc.text.fill", color: .blue)
           DashStatCard(title: "Today Incidents",
-            value: "\(policyStore.agentStatus.totalIncidentsToday)",
-            icon: "exclamationmark.triangle.fill", color: .orange)
+                       value: "\(policyStore.agentStatus.totalIncidentsToday)",
+                       icon: "exclamationmark.triangle.fill", color: .orange)
           DashStatCard(title: "Blocked",
-            value: "\(policyStore.agentStatus.blockedToday)",
-            icon: "xmark.shield.fill", color: .red)
+                       value: "\(policyStore.agentStatus.blockedToday)",
+                       icon: "xmark.shield.fill", color: .red)
           DashStatCard(title: "Audited",
-            value: "\(policyStore.agentStatus.auditedToday)",
-            icon: "eye.fill", color: .purple)
+                       value: "\(policyStore.agentStatus.auditedToday)",
+                       icon: "eye.fill", color: .purple)
         }
       }
       .padding(24)
@@ -210,49 +215,6 @@ struct DashStatCard: View {
     .frame(maxWidth: .infinity).padding(16)
     .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
     .overlay(RoundedRectangle(cornerRadius: 10).stroke(color.opacity(0.2), lineWidth: 1))
-  }
-}
-
-// MARK: - Policies Tab
-
-struct PoliciesTabView: View {
-  @EnvironmentObject var policyStore: PolicyStore
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Image(systemName: "doc.text.fill").foregroundColor(.blue)
-        Text("DLP Policies").font(.title2.bold())
-        Spacer()
-      }
-      .padding(16)
-      Divider()
-      List(policyStore.policies) { policy in
-        HStack {
-          Circle()
-            .fill(policy.action == .block ? Color.red : policy.action == .audit ? Color.orange : Color.green)
-            .frame(width: 8, height: 8)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(policy.name).font(.body.bold())
-            Text(policy.description).font(.caption).foregroundColor(.secondary)
-          }
-          Spacer()
-          Text(policy.action.displayName)
-            .font(.caption).padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Capsule().fill(
-              policy.action == .block ? Color.red.opacity(0.15) :
-              policy.action == .audit ? Color.orange.opacity(0.15) : Color.green.opacity(0.15)
-            ))
-          Toggle("", isOn: Binding(
-            get: { policy.enabled },
-            set: { _ in policyStore.togglePolicy(policy) }
-          ))
-          .labelsHidden()
-        }
-        .padding(.vertical, 4)
-      }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 
