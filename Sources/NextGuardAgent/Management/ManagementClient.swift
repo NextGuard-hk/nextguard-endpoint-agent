@@ -189,6 +189,7 @@ class ManagementClient {
         request.timeoutInterval = 15
         let (data, _) = try await session.data(for: request)
         return data
+            }
 
             // MARK: - Log Upload (for ForensicCollector)
     func uploadLogs(events: [[String: Any]], completion: @escaping (Bool) -> Void) {
