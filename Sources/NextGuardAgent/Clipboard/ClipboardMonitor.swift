@@ -11,10 +11,9 @@
 import Foundation
 import AppKit
 import os.log
-import UserNotifications
 
 // MARK: - Clipboard Monitor
-final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
+final class ClipboardMonitor {
     static let shared = ClipboardMonitor()
     private let logger = Logger(subsystem: "com.nextguard.agent", category: "ClipboardMonitor")
     private let engine = DLPPolicyEngine.shared
@@ -25,46 +24,14 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
     private(set) var isActive: Bool = false
     private var totalInspected: Int = 0
     private var totalBlocked: Int = 0
-    private var notificationsReady: Bool = false
 
     private let pollInterval: TimeInterval = 0.5
 
-    private override init() {
-        super.init()
-    }
-
-    // MARK: - Notification Setup (called lazily, after app is fully running)
-    private func setupNotifications() {
-        guard !notificationsReady else { return }
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                print("[OK] Notification permission granted")
-            } else {
-                print("[WARN] Notification permission not granted: \(error?.localizedDescription ?? "unknown")")
-            }
-        }
-        notificationsReady = true
-        print("[OK] Notification system initialized")
-    }
-
-    // UNUserNotificationCenterDelegate - show notification even when app is in foreground
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                willPresent notification: UNNotification,
-                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound, .badge])
-    }
+    private init() {}
 
     // MARK: - Start / Stop
     func startMonitoring() {
         guard !isActive else { return }
-
-        // Setup notifications lazily here (app is fully running at this point)
-        DispatchQueue.main.async { [weak self] in
-            self?.setupNotifications()
-        }
-
         lastChangeCount = NSPasteboard.general.changeCount
         pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             self?.checkClipboard()
@@ -118,17 +85,17 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
         if action == .block || action == .quarantine {
             clearClipboard()
             totalBlocked += 1
-            showDLPAlert(
+            showPopup(
                 title: "NextGuard DLP - Content BLOCKED",
                 message: "Sensitive data detected and blocked in \(sourceApp).\n\nRules: \(ruleNames)\nSeverity: \(severities)\nMatches: \(matchCount)\n\nClipboard has been cleared.",
-                isBlock: true
+                critical: true
             )
             print("  Result: CLIPBOARD CLEARED - content blocked")
         } else {
-            showDLPAlert(
+            showPopup(
                 title: "NextGuard DLP - Sensitive Data Detected",
                 message: "Sensitive data detected in \(sourceApp) (audit mode).\n\nRules: \(ruleNames)\nSeverity: \(severities)\nMatches: \(matchCount)",
-                isBlock: false
+                critical: false
             )
             print("  Result: Logged (audit mode)")
         }
@@ -161,30 +128,17 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    // MARK: - Show DLP Alert (guaranteed popup on screen)
-    private func showDLPAlert(title: String, message: String, isBlock: Bool) {
-        // Try UNUserNotificationCenter first (for banner notification)
-        if notificationsReady {
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = message
-            content.sound = UNNotificationSound.default
-            let requestId = "dlp-\(UUID().uuidString)"
-            let request = UNNotificationRequest(identifier: requestId, content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(request) { error in
-                if let error = error {
-                    print("[WARN] UNNotification failed: \(error.localizedDescription)")
-                }
-            }
-        }
-
-        // Always show NSAlert as a guaranteed on-screen popup
+    // MARK: - Popup Alert (NSAlert - works in any macOS app)
+    private func showPopup(title: String, message: String, critical: Bool) {
         DispatchQueue.main.async {
+            // Bring app to front so alert is visible
+            NSApp.activate(ignoringOtherApps: true)
+
             let alert = NSAlert()
             alert.messageText = title
             alert.informativeText = message
-            alert.alertStyle = isBlock ? .critical : .warning
-            if isBlock {
+            alert.alertStyle = critical ? .critical : .warning
+            if critical {
                 alert.icon = NSImage(systemSymbolName: "xmark.shield.fill", accessibilityDescription: "Blocked")
             } else {
                 alert.icon = NSImage(systemSymbolName: "exclamationmark.shield.fill", accessibilityDescription: "Warning")
