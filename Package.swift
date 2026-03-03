@@ -28,6 +28,7 @@ let package = Package(
         .linkedFramework("AppKit"),
         .linkedFramework("SwiftUI"),
         .linkedFramework("Combine"),
+        .linkedFramework("UserNotifications"),
         .linkedFramework("SystemExtensions"),
         .linkedFramework("NetworkExtension"),
         .linkedFramework("IOKit"),
