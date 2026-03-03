@@ -122,7 +122,7 @@ struct MainContentView: View {
   private var detailView: some View {
     switch selectedTab {
     case .dashboard: DashboardTabView()
-    case .policies: PoliciesTabView()
+    case .policies: LocalPolicyManagementView()
     case .incidents: IncidentsTabView(store: incidentLog)
     case .settings: AgentSettingsContentView()
     }
