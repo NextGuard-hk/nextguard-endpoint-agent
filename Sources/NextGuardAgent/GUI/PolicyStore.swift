@@ -3,6 +3,7 @@
 //  NextGuardAgent
 //
 //  Local policy data model and persistence store
+//  NOTE: RuleAction (not PolicyAction) to avoid conflict with Policy/PolicyManager.swift
 //
 
 import Foundation
@@ -10,7 +11,7 @@ import Combine
 
 // MARK: - Policy Models
 
-enum PolicyAction: String, Codable, CaseIterable {
+enum RuleAction: String, Codable, CaseIterable {
     case block = "block"
     case audit = "audit"
     case allow = "allow"
@@ -32,12 +33,12 @@ enum PolicyAction: String, Codable, CaseIterable {
     }
 }
 
-struct PolicyRule: Codable, Identifiable {
+struct GUIPolicyRule: Codable, Identifiable {
     var id: UUID
     var name: String
     var description: String
     var enabled: Bool
-    var action: PolicyAction
+    var action: RuleAction
     var keywords: [String]
     var fileTypes: [String]
     var destinations: [String]
@@ -45,7 +46,7 @@ struct PolicyRule: Codable, Identifiable {
     var updatedAt: Date
     
     init(id: UUID = UUID(), name: String, description: String = "",
-         enabled: Bool = true, action: PolicyAction = .audit,
+         enabled: Bool = true, action: RuleAction = .audit,
          keywords: [String] = [], fileTypes: [String] = [],
          destinations: [String] = []) {
         self.id = id
@@ -61,7 +62,7 @@ struct PolicyRule: Codable, Identifiable {
     }
 }
 
-struct AgentStatus: Codable {
+struct AgentStatusInfo: Codable {
     var isProtected: Bool
     var isConnectedToConsole: Bool
     var lastSyncTime: Date?
@@ -72,8 +73,8 @@ struct AgentStatus: Codable {
     var tenantId: String?
     var consoleUrl: String
     
-    static var `default`: AgentStatus {
-        AgentStatus(
+    static var `default`: AgentStatusInfo {
+        AgentStatusInfo(
             isProtected: true,
             isConnectedToConsole: false,
             lastSyncTime: nil,
@@ -92,13 +93,12 @@ struct AgentStatus: Codable {
 class PolicyStore: ObservableObject {
     static let shared = PolicyStore()
     
-    @Published var policies: [PolicyRule] = []
-    @Published var agentStatus: AgentStatus = .default
+    @Published var policies: [GUIPolicyRule] = []
+    @Published var agentStatus: AgentStatusInfo = .default
     @Published var isLoading = false
     @Published var lastError: String?
     
     private let policiesKey = "ng_local_policies"
-    private let statusKey = "ng_agent_status"
     private var syncTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     
@@ -114,7 +114,7 @@ class PolicyStore: ObservableObject {
         guard policies.isEmpty else { return }
         
         policies = [
-            PolicyRule(
+            GUIPolicyRule(
                 name: "Credit Card Data",
                 description: "Detect and block credit card numbers in outbound transfers",
                 enabled: true,
@@ -123,7 +123,7 @@ class PolicyStore: ObservableObject {
                 fileTypes: [".txt", ".csv", ".xlsx", ".pdf"],
                 destinations: ["email", "usb", "cloud"]
             ),
-            PolicyRule(
+            GUIPolicyRule(
                 name: "Personal Identifiable Information",
                 description: "Audit PII data movement including HKID, passport numbers",
                 enabled: true,
@@ -132,7 +132,7 @@ class PolicyStore: ObservableObject {
                 fileTypes: [".pdf", ".docx", ".xlsx"],
                 destinations: ["email", "cloud", "web"]
             ),
-            PolicyRule(
+            GUIPolicyRule(
                 name: "Confidential Documents",
                 description: "Block sharing of files marked Confidential or Top Secret",
                 enabled: true,
@@ -141,7 +141,7 @@ class PolicyStore: ObservableObject {
                 fileTypes: [".pdf", ".docx", ".pptx", ".xlsx"],
                 destinations: ["email", "usb", "cloud", "web"]
             ),
-            PolicyRule(
+            GUIPolicyRule(
                 name: "Source Code",
                 description: "Audit source code file transfers",
                 enabled: false,
@@ -156,29 +156,26 @@ class PolicyStore: ObservableObject {
     
     // MARK: - CRUD Operations
     
-    func addPolicy(_ policy: PolicyRule) {
+    func addPolicy(_ policy: GUIPolicyRule) {
         policies.append(policy)
         saveLocalPolicies()
-        syncToConsole()
     }
     
-    func updatePolicy(_ policy: PolicyRule) {
+    func updatePolicy(_ policy: GUIPolicyRule) {
         if let index = policies.firstIndex(where: { $0.id == policy.id }) {
             var updated = policy
             updated.updatedAt = Date()
             policies[index] = updated
             saveLocalPolicies()
-            syncToConsole()
         }
     }
     
-    func deletePolicy(_ policy: PolicyRule) {
+    func deletePolicy(_ policy: GUIPolicyRule) {
         policies.removeAll { $0.id == policy.id }
         saveLocalPolicies()
-        syncToConsole()
     }
     
-    func togglePolicy(_ policy: PolicyRule) {
+    func togglePolicy(_ policy: GUIPolicyRule) {
         var updated = policy
         updated.enabled = !policy.enabled
         updatePolicy(updated)
@@ -194,7 +191,7 @@ class PolicyStore: ObservableObject {
     
     private func loadLocalPolicies() {
         guard let data = UserDefaults.standard.data(forKey: policiesKey),
-              let decoded = try? JSONDecoder().decode([PolicyRule].self, from: data) else { return }
+              let decoded = try? JSONDecoder().decode([GUIPolicyRule].self, from: data) else { return }
         policies = decoded
     }
     
@@ -215,49 +212,17 @@ class PolicyStore: ObservableObject {
         URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
-                
-                if let error = error {
-                    self?.lastError = error.localizedDescription
+                if error != nil {
                     self?.agentStatus.isConnectedToConsole = false
                     return
                 }
-                
-                guard let data = data,
-                      let consolePolicies = try? JSONDecoder().decode([PolicyRule].self, from: data) else {
-                    return
-                }
-                
-                self?.policies = consolePolicies
-                self?.saveLocalPolicies()
                 self?.agentStatus.isConnectedToConsole = true
                 self?.agentStatus.lastSyncTime = Date()
             }
         }.resume()
     }
     
-    func syncToConsole() {
-        // Push local policy changes to console
-        guard let tenantId = agentStatus.tenantId,
-              let url = URL(string: "\(agentStatus.consoleUrl)/api/v1/policies/sync") else { return }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(tenantId, forHTTPHeaderField: "X-Tenant-ID")
-        
-        guard let body = try? JSONEncoder().encode(policies) else { return }
-        request.httpBody = body
-        
-        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
-            DispatchQueue.main.async {
-                if error != nil {
-                    self?.agentStatus.isConnectedToConsole = false
-                }
-            }
-        }.resume()
-    }
-    
-    func recordIncident(action: PolicyAction) {
+    func recordIncident(action: RuleAction) {
         agentStatus.totalIncidentsToday += 1
         if action == .block {
             agentStatus.blockedToday += 1
