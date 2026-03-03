@@ -26,8 +26,8 @@ enum EnforcementMode: String, Codable, CaseIterable {
     }
 }
 
-// MARK: - Policy Action
-enum DLPAction: String, Codable, CaseIterable {
+// MARK: - Local Policy Action (prefixed to avoid conflict with DLPPolicyEngine.DLPAction)
+enum LocalDLPAction: String, Codable, CaseIterable {
     case block = "Block"
     case audit = "Audit"
     case allow = "Allow"
@@ -41,33 +41,35 @@ struct LocalPolicyRule: Codable, Identifiable {
     var name: String
     var description: String
     var isEnabled: Bool
-    var action: DLPAction
+    var action: LocalDLPAction
     var priority: Int
-    var category: PolicyCategory
-    var conditions: [PolicyCondition]
-    var source: PolicySource
+    var category: LocalPolicyCategory
+    var conditions: [LocalPolicyCondition]
+    var source: LocalPolicySource
     var createdAt: Date
     var updatedAt: Date
-
-    enum PolicyCategory: String, Codable, CaseIterable {
-        case pii = "PII"
-        case phi = "PHI"
-        case pci = "PCI-DSS"
-        case financialData = "Financial Data"
-        case intellectualProperty = "Intellectual Property"
-        case confidential = "Confidential"
-        case sourceCode = "Source Code"
-        case custom = "Custom"
-    }
-
-    enum PolicySource: String, Codable {
-        case server = "Server"
-        case local = "Local"
-    }
 }
 
-// MARK: - Policy Condition
-struct PolicyCondition: Codable, Identifiable {
+// MARK: - Local Policy Category (prefixed to avoid conflict with PolicyManager.PolicyCategory)
+enum LocalPolicyCategory: String, Codable, CaseIterable {
+    case pii = "PII"
+    case phi = "PHI"
+    case pci = "PCI-DSS"
+    case financialData = "Financial Data"
+    case intellectualProperty = "Intellectual Property"
+    case confidential = "Confidential"
+    case sourceCode = "Source Code"
+    case custom = "Custom"
+}
+
+// MARK: - Local Policy Source (prefixed to avoid conflict with PolicyManager.PolicySource)
+enum LocalPolicySource: String, Codable {
+    case server = "Server"
+    case local = "Local"
+}
+
+// MARK: - Local Policy Condition (prefixed to avoid conflict with PolicyHierarchyEngine.PolicyConditions)
+struct LocalPolicyCondition: Codable, Identifiable {
     let id: UUID
     var type: ConditionType
     var pattern: String
@@ -92,8 +94,8 @@ struct PolicyCondition: Codable, Identifiable {
 // MARK: - Policy Match Result
 struct PolicyMatchResult {
     let matchedRule: LocalPolicyRule
-    let matchedConditions: [PolicyCondition]
-    let action: DLPAction
+    let matchedConditions: [LocalPolicyCondition]
+    let action: LocalDLPAction
     let timestamp: Date
     let context: MatchContext
 
@@ -144,7 +146,7 @@ final class LocalPolicyEngine: ObservableObject {
     }
 
     private func evaluateRule(_ rule: LocalPolicyRule, content: String, filePath: String?, destination: String?, app: String?) -> PolicyMatchResult? {
-        var matchedConditions: [PolicyCondition] = []
+        var matchedConditions: [LocalPolicyCondition] = []
 
         for condition in rule.conditions {
             let matched: Bool
@@ -173,7 +175,7 @@ final class LocalPolicyEngine: ObservableObject {
 
         guard !matchedConditions.isEmpty else { return nil }
 
-        let effectiveAction: DLPAction = agentMode == EnforcementMode.monitor ? DLPAction.audit : rule.action
+        let effectiveAction: LocalDLPAction = agentMode == EnforcementMode.monitor ? LocalDLPAction.audit : rule.action
 
         return PolicyMatchResult(
             matchedRule: rule,
@@ -190,7 +192,7 @@ final class LocalPolicyEngine: ObservableObject {
         )
     }
 
-    private func matchPattern(_ condition: PolicyCondition, against text: String) -> Bool {
+    private func matchPattern(_ condition: LocalPolicyCondition, against text: String) -> Bool {
         if condition.isRegex {
             let options: NSRegularExpression.Options = condition.caseSensitive ? [] : [.caseInsensitive]
             guard let regex = try? NSRegularExpression(pattern: condition.pattern, options: options) else { return false }
@@ -206,7 +208,7 @@ final class LocalPolicyEngine: ObservableObject {
     }
 
     // MARK: - Local Policy CRUD
-    func addLocalRule(name: String, description: String, action: DLPAction, category: LocalPolicyRule.PolicyCategory, conditions: [PolicyCondition], priority: Int = 50) {
+    func addLocalRule(name: String, description: String, action: LocalDLPAction, category: LocalPolicyCategory, conditions: [LocalPolicyCondition], priority: Int = 50) {
         let rule = LocalPolicyRule(
             id: UUID(),
             name: name,
@@ -257,7 +259,7 @@ final class LocalPolicyEngine: ObservableObject {
 
     // MARK: - Built-in Default Policies
     func installDefaultPolicies() {
-        let defaults: [(String, String, DLPAction, LocalPolicyRule.PolicyCategory, String, Bool)] = [
+        let defaults: [(String, String, LocalDLPAction, LocalPolicyCategory, String, Bool)] = [
             ("Credit Card Detection", "Detects credit card numbers", .audit, .pci, "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\\b", true),
             ("SSN Detection", "Detects US Social Security Numbers", .block, .pii, "\\b\\d{3}-\\d{2}-\\d{4}\\b", true),
             ("HKID Detection", "Detects Hong Kong ID numbers", .audit, .pii, "\\b[A-Z]{1,2}\\d{6}\\([0-9A]\\)\\b", true),
@@ -268,7 +270,7 @@ final class LocalPolicyEngine: ObservableObject {
 
         for (name, desc, action, category, pattern, isRegex) in defaults {
             guard !localRules.contains(where: { $0.name == name }) else { continue }
-            let condition = PolicyCondition(
+            let condition = LocalPolicyCondition(
                 id: UUID(),
                 type: .contentMatch,
                 pattern: pattern,
