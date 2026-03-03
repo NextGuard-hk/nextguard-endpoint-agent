@@ -88,6 +88,23 @@ struct AgentStatusInfo: Codable {
     }
 }
 
+// MARK: - StatusDashboardView Aliases
+extension AgentStatusInfo {
+        var protectionEnabled: Bool {
+                    get { isProtected }
+                    set { isProtected = newValue }
+                }
+        var isConnected: Bool { isConnectedToConsole }
+        var lastPolicySync: Date? { lastSyncTime }
+        var todayIncidentCount: Int { totalIncidentsToday }
+        var todayBlockCount: Int { blockedToday }
+        var todayAuditCount: Int { auditedToday }
+        var activePolicyCount: Int { PolicyStore.shared.policies.filter { $0.enabled }.count }
+        var endpointId: String { tenantId ?? "" }
+        var enrollmentStatus: String {
+                    isConnectedToConsole ? "Managed" : "Standalone"
+                }
+    }
 // MARK: - Policy Store
 
 class PolicyStore: ObservableObject {
