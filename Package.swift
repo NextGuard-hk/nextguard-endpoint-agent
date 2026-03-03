@@ -7,7 +7,7 @@ import PackageDescription
 let package = Package(
   name: "NextGuardAgent",
   platforms: [
-    .macOS(.v14)  // macOS 14 Sonoma minimum, supports macOS 15 Sequoia+
+    .macOS(.v14) // macOS 14 Sonoma minimum, supports macOS 15 Sequoia+
   ],
   products: [
     .executable(
@@ -26,6 +26,8 @@ let package = Package(
       exclude: ["Sources", "MacApps"],
       linkerSettings: [
         .linkedFramework("AppKit"),
+        .linkedFramework("SwiftUI"),
+        .linkedFramework("Combine"),
         .linkedFramework("SystemExtensions"),
         .linkedFramework("NetworkExtension"),
         .linkedFramework("IOKit"),
