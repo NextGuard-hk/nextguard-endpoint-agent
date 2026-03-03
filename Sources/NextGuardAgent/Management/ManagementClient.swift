@@ -189,5 +189,21 @@ class ManagementClient {
         request.timeoutInterval = 15
         let (data, _) = try await session.data(for: request)
         return data
+
+            // MARK: - Log Upload (for ForensicCollector)
+    func uploadLogs(events: [[String: Any]], completion: @escaping (Bool) -> Void) {
+        guard let url = URL(string: "\(baseURL)/logs/upload") else {
+            completion(false); return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["events": events])
+        request.timeoutInterval = 15
+        session.dataTask(with: request) { _, response, error in
+            let success = (response as? HTTPURLResponse)?.statusCode == 200
+            completion(success)
+        }.resume()
+    }
     }
 }
