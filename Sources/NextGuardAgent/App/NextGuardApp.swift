@@ -12,10 +12,12 @@ import os.log
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
     static let logger = Logger(subsystem: "com.nextguard.agent", category: "App")
+
     private var statusItem: NSStatusItem!
     private let policyEngine = DLPPolicyEngine.shared
     private let mgmtClient = ManagementClient.shared
     private var monitoringActive = false
+
     private var statusMenuItem: NSMenuItem!
     private var policiesMenuItem: NSMenuItem!
     private var connectionMenuItem: NSMenuItem!
@@ -39,6 +41,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+
         let titleItem = NSMenuItem(title: "NextGuard DLP Agent v1.2.0", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
@@ -55,16 +58,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         policiesMenuItem = NSMenuItem(title: "Policies: Loading...", action: nil, keyEquivalent: "")
         policiesMenuItem.isEnabled = false
         menu.addItem(policiesMenuItem)
-        menu.addItem(NSMenuItem.separator())
 
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "About NextGuard", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
+
         statusItem.menu = menu
 
-        // Initialize: register, load policies from console, start heartbeat + policy refresh
+        // Step 4: Start real-time clipboard monitoring ON MAIN THREAD
+        // IMPORTANT: Must be called on main thread before Task{} block
+        // because Timer and RunLoop require the main thread.
+        ClipboardMonitor.shared.startMonitoring()
+        print("[OK] Real-time clipboard monitoring started")
+
+        // Async initialization: register, load policies, start heartbeat
         Task {
             if mgmtClient.tenantId == nil {
                 mgmtClient.setTenantId("tenant-demo")
@@ -97,15 +107,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("[OK] \(count) policies loaded locally")
             }
 
-            // Step 3: Start heartbeat + periodic policy refresh (every 5 min)
+            // Step 3: Start heartbeat + periodic policy refresh
             mgmtClient.startHeartbeat()
             print("[OK] Heartbeat started")
+
             policyEngine.startPolicyRefresh(interval: 300)
             print("[OK] Policy refresh started (every 5 min)")
-
-            // Step 4: Start real-time clipboard monitoring (auto-scan every 2 seconds)
-            ClipboardMonitor.shared.startMonitoring()
-            print("[OK] Real-time clipboard monitoring started")
 
             await updateStatusMenuItem("Status: Monitoring Active")
         }
@@ -116,13 +123,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func updateConnectionStatus(_ text: String) { connectionMenuItem.title = text }
-    @MainActor
-    private func updateStatusMenuItem(_ text: String) { statusMenuItem.title = text }
-    @MainActor
-    private func updatePoliciesStatus(_ text: String) { policiesMenuItem.title = text }
+    private func updateConnectionStatus(_ text: String) {
+        connectionMenuItem.title = text
+    }
 
-    @objc func showDashboard() { MainWindowController.shared.showWindow() }
+    @MainActor
+    private func updateStatusMenuItem(_ text: String) {
+        statusMenuItem.title = text
+    }
+
+    @MainActor
+    private func updatePoliciesStatus(_ text: String) {
+        policiesMenuItem.title = text
+    }
+
+    @objc func showDashboard() {
+        MainWindowController.shared.showWindow()
+    }
 
     @objc func scanClipboard() {
         let pasteboard = NSPasteboard.general
@@ -130,6 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             print("[INFO] Clipboard is empty or has no text")
             return
         }
+
         let results = policyEngine.scanContent(content, channel: .clipboard)
         if results.isEmpty {
             let alert = NSAlert()
@@ -148,8 +166,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 for result in results {
                     await mgmtClient.reportIncident(
-                        policyId: result.ruleId, channel: "clipboard",
-                        severity: result.severity.rawValue, action: result.action.rawValue,
+                        policyId: result.ruleId,
+                        channel: "clipboard",
+                        severity: result.severity.rawValue,
+                        action: result.action.rawValue,
                         matchCount: result.matches.count,
                         details: "Clipboard scan: \(result.matches.count) matches for policy \(result.ruleName)"
                     )
