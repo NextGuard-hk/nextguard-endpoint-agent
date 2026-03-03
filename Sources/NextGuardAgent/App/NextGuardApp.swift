@@ -40,7 +40,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-
         let titleItem = NSMenuItem(title: "NextGuard DLP Agent v1.2.0", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
@@ -57,24 +56,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         policiesMenuItem = NSMenuItem(title: "Policies: Loading...", action: nil, keyEquivalent: "")
         policiesMenuItem.isEnabled = false
         menu.addItem(policiesMenuItem)
-        menu.addItem(NSMenuItem.separator())
 
-        menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(126
-        ), keyEquivalent: "d"))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "About NextGuard", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
-
         statusItem.menu = menu
 
         // Initialize: register with management console, load policies, start heartbeat
         Task {
+            // Step 0: Set tenant ID if not already configured
+            // Default to "tenant-demo". In production, this would come from
+            // MDM profile, enrollment token, or configuration file.
+            if mgmtClient.tenantId == nil {
+                mgmtClient.setTenantId("tenant-demo")
+            }
+
             // Step 1: Register with management console
             await updateConnectionStatus("Console: Registering...")
             let registered = await mgmtClient.registerAgent()
             if registered {
-                await updateConnectionStatus("Console: Connected")
+                await updateConnectionStatus("Console: Connected (\(mgmtClient.tenantId ?? "unknown"))")
                 Self.logger.info("Agent registered with management console")
                 print("[OK] Agent registered with management console")
             } else {
@@ -100,7 +104,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Step 3: Start heartbeat
             mgmtClient.startHeartbeat()
             print("[OK] Heartbeat started")
-
             await updateStatusMenuItem("Status: Monitoring Active")
         }
 
@@ -134,7 +137,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             print("[INFO] Clipboard is empty or has no text")
             return
         }
-
         let results = policyEngine.scanContent(content, channel: .clipboard)
         if results.isEmpty {
             let alert = NSAlert()
@@ -149,7 +151,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = "Found \(matchCount) matches in \(results.count) rules."
             alert.alertStyle = .critical
             alert.runModal()
-
             // Report incidents to management console
             Task {
                 for result in results {
@@ -167,11 +168,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    }    @objc func showAbout() {
+    @objc func showAbout() {
         MainWindowController.shared.showWindow()
         MainWindowController.shared.showContentForItem(.about)
     }
-
 
     @objc func quitApp() {
         print("[OK] NextGuard DLP Agent shutting down")
