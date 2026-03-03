@@ -55,7 +55,7 @@ struct EnrollmentResponse: Codable {
 
 // MARK: - Enrollment Manager
 
-import Crypclass EnrollmentManager: ObservableObject {toKit import Combine
+class EnrollmentManager: ObservableObject {
     static let shared = EnrollmentManager()
     private init() {}
 
