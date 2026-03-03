@@ -249,8 +249,8 @@ public class MessagingAppMonitor: AppSubMonitor {
       maxSeverity = .critical
     }
     // Email addresses (bulk)
-    let emailMatches = text.matches(of: /[\w.+-]+@[\w-]+\.[\w.]+/)
-    if emailMatches.count >= 5 {
+    let emailMatchCount = (try? NSRegularExpression(pattern: "[\\w.+-]+@[\\w-]+\\.[\\w.]+").numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))) ?? 0
+    if emailMatchCount >= 5 {
       rules.append("BULK_EMAIL_EXFILTRATION")
       maxSeverity = max(maxSeverity, .high)
     }
