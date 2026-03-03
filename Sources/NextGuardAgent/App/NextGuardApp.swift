@@ -5,6 +5,9 @@
 //  Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 //  Enterprise-grade Data Loss Prevention for macOS
 //
+//  DESIGN REFERENCE: Forcepoint DLP Agent, Palo Alto Cortex XDR,
+//  McAfee DLP Endpoint, Zscaler Client Connector
+//
 
 import AppKit
 import SwiftUI
@@ -14,15 +17,21 @@ import os.log
 class AppDelegate: NSObject, NSApplicationDelegate {
     static let logger = Logger(subsystem: "com.nextguard.agent", category: "App")
 
+    // Core engines
     private var statusItem: NSStatusItem!
     private let policyEngine = DLPPolicyEngine.shared
+    private let localPolicyEngine = LocalPolicyEngine.shared
     private let mgmtClient = ManagementClient.shared
     private var monitoringActive = false
     private var scanningTimer: Timer?
 
+    // Menu bar items
     private var statusMenuItem: NSMenuItem!
     private var policiesMenuItem: NSMenuItem!
     private var connectionMenuItem: NSMenuItem!
+
+    // New: Full window controller
+    private var menuBarController: MenuBarController?
 
     static func main() {
         let app = NSApplication.shared
@@ -33,15 +42,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("[OK] Application launched successfully")
-        Self.logger.info("Application launched")
+        Self.logger.info("NextGuard DLP Agent launching")
+        print("[OK] Application launched")
 
+        // Setup menu bar controller (new full-featured GUI)
+        menuBarController = MenuBarController()
+        menuBarController?.setupMenuBar()
+
+        // Legacy status item (kept for compatibility)
         setupStatusItem()
         setupMenu()
 
-        // Start real-time clipboard monitoring
+        // Start real-time monitoring
         ClipboardMonitor.shared.startMonitoring()
-        print("[OK] Real-time clipboard monitoring started")
+        print("[OK] Clipboard monitoring started")
 
         // Async initialization
         Task {
@@ -49,33 +63,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 mgmtClient.setTenantId("tenant-demo")
             }
 
-            // Scanning animation while initializing
             await startScanningAnimation()
+            await updateConnectionStatus("Console: Registering...")
 
             // Step 1: Register with console
-            await updateConnectionStatus("Console: Registering...")
             let registered = await mgmtClient.registerAgent()
             if registered {
                 await updateConnectionStatus("Console: Connected (\(mgmtClient.tenantId ?? "unknown"))")
                 Self.logger.info("Agent registered with management console")
-                print("[OK] Agent registered with management console")
                 GUIManager.shared.updateConnectionStatus(
                     connected: true,
                     tenantId: mgmtClient.tenantId,
                     consoleUrl: "https://next-guard.com"
                 )
+                menuBarController?.updateConnectionStatus(.connected)
             } else {
                 await updateConnectionStatus("Console: Offline (local mode)")
-                Self.logger.warning("Failed to register with console, running in local mode")
-                print("[WARN] Running in local mode - console unreachable")
+                Self.logger.warning("Running in local mode")
                 GUIManager.shared.updateConnectionStatus(
                     connected: false,
                     tenantId: mgmtClient.tenantId,
                     consoleUrl: "https://next-guard.com"
                 )
+                menuBarController?.updateConnectionStatus(.disconnected)
             }
 
-            // Step 2: Pull policies
+            // Step 2: Pull server policies and merge with local
             let remotePolicies = await mgmtClient.pullPolicies()
             if !remotePolicies.isEmpty {
                 policyEngine.loadPoliciesFromConsole(remotePolicies)
@@ -91,11 +104,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 GUIManager.shared.updatePolicyCount(count, source: "local")
             }
 
-            // Step 3: Heartbeat + refresh
+            // Step 3: Heartbeat
             mgmtClient.startHeartbeat()
-            print("[OK] Heartbeat started")
             policyEngine.startPolicyRefresh(interval: 300)
-            print("[OK] Policy refresh started (every 5 min)")
 
             await stopScanningAnimation()
             await updateStatusMenuItem("Status: Monitoring Active")
@@ -103,11 +114,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         monitoringActive = true
-        print("[OK] Menu bar icon active")
-        print("[OK] DLP monitoring started")
+        print("[OK] DLP monitoring active")
+        print("[OK] NextGuard Agent ready")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        print("[OK] NextGuard DLP Agent shutting down")
+        ClipboardMonitor.shared.stopMonitoring()
+        mgmtClient.stopHeartbeat()
+        policyEngine.stopPolicyRefresh()
     }
 
     // MARK: - Status Item Setup
+
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -119,32 +138,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupMenu() {
-        // Right-click context menu
         let menu = NSMenu()
         let titleItem = NSMenuItem(title: "NextGuard DLP Agent v1.2.0", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         menu.addItem(NSMenuItem.separator())
+
         connectionMenuItem = NSMenuItem(title: "Console: Connecting...", action: nil, keyEquivalent: "")
         connectionMenuItem.isEnabled = false
         menu.addItem(connectionMenuItem)
+
         statusMenuItem = NSMenuItem(title: "Status: Initializing...", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
+
         policiesMenuItem = NSMenuItem(title: "Policies: Loading...", action: nil, keyEquivalent: "")
         policiesMenuItem.isEnabled = false
         menu.addItem(policiesMenuItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
-        menu.addItem(NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c"))
+
+        let dashboardItem = NSMenuItem(title: "Open Dashboard", action: #selector(showDashboard), keyEquivalent: "d")
+        dashboardItem.target = self
+        menu.addItem(dashboardItem)
+
+        let scanItem = NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c")
+        scanItem.target = self
+        menu.addItem(scanItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "About NextGuard", action: #selector(showAbout), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
+
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
         statusItem.menu = nil
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
-    // MARK: - Status Bar Button Click Handler
     @objc func statusBarButtonClicked() {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
@@ -168,6 +197,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let status = statusMenuItem { menu.addItem(status.copy() as! NSMenuItem) }
         if let policies = policiesMenuItem { menu.addItem(policies.copy() as! NSMenuItem) }
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(showDashboard), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: ""))
@@ -175,6 +205,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - MainActor Helpers
+
     @MainActor private func updateConnectionStatus(_ text: String) { connectionMenuItem?.title = text }
     @MainActor private func updateStatusMenuItem(_ text: String) { statusMenuItem?.title = text }
     @MainActor private func updatePoliciesStatus(_ text: String) { policiesMenuItem?.title = text }
@@ -194,7 +225,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Actions
+
     @objc func showDashboard() {
+        // Open full window GUI
+        menuBarController?.openMainWindow()
+        // Also toggle popover for quick view
         if let button = statusItem.button {
             GUIManager.shared.openPopover(relativeTo: button)
         }
@@ -203,29 +238,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func scanClipboard() {
         let pasteboard = NSPasteboard.general
         guard let content = pasteboard.string(forType: .string) else {
-            print("[INFO] Clipboard is empty or has no text")
+            print("[INFO] Clipboard is empty")
             return
         }
+
+        // Check both engines: server policy engine and local policy engine
         let results = policyEngine.scanContent(content, channel: .clipboard)
-        if results.isEmpty {
+        let localMatch = localPolicyEngine.evaluate(
+            content: content,
+            filePath: nil,
+            destination: nil,
+            app: "Clipboard"
+        )
+
+        let totalMatches = results.reduce(0) { $0 + $1.matches.count }
+        let hasLocalMatch = localMatch != nil
+
+        if results.isEmpty && !hasLocalMatch {
             let alert = NSAlert()
             alert.messageText = "Clipboard Scan Complete"
             alert.informativeText = "No sensitive data detected in clipboard."
             alert.alertStyle = .informational
             alert.runModal()
         } else {
-            let matchCount = results.reduce(0) { $0 + $1.matches.count }
             let alert = NSAlert()
             alert.messageText = "Sensitive Data Detected!"
-            alert.informativeText = "Found \(matchCount) matches in \(results.count) rules."
+            var info = ""
+            if totalMatches > 0 { info += "Server policies: \(totalMatches) matches. " }
+            if hasLocalMatch { info += "Local policy matched: \(localMatch!.matchedRule.name) → \(localMatch!.action.rawValue)" }
+            alert.informativeText = info
             alert.alertStyle = .critical
             alert.runModal()
+
             Task {
                 for result in results {
-                    // Notify GUI - use RuleAction (GUI type)
                     let guiAction: RuleAction = result.action.rawValue == "block" ? .block : .audit
                     GUIManager.shared.notifyIncident(policyName: result.ruleName, action: guiAction)
-                    // Report to console
                     await mgmtClient.reportIncident(
                         policyId: result.ruleId,
                         channel: "clipboard",
@@ -235,22 +283,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         details: "Clipboard scan: \(result.matches.count) matches for policy \(result.ruleName)"
                     )
                 }
-                print("[OK] Incidents reported to management console")
+                let incidentCount = results.count + (hasLocalMatch ? 1 : 0)
+                menuBarController?.updateIncidentCount(incidentCount)
             }
         }
     }
 
-    @objc func showAbout() {
-        if let button = statusItem.button {
-            GUIManager.shared.openPopover(relativeTo: button)
-        }
-    }
-
     @objc func quitApp() {
-        print("[OK] NextGuard DLP Agent shutting down")
-        ClipboardMonitor.shared.stopMonitoring()
-        mgmtClient.stopHeartbeat()
-        policyEngine.stopPolicyRefresh()
         NSApplication.shared.terminate(nil)
     }
 }
