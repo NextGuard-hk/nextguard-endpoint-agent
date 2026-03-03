@@ -59,7 +59,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 await updateConnectionStatus("Console: Connected (\(mgmtClient.tenantId ?? "unknown"))")
                 Self.logger.info("Agent registered with management console")
                 print("[OK] Agent registered with management console")
-                // Update GUI connection status
                 GUIManager.shared.updateConnectionStatus(
                     connected: true,
                     tenantId: mgmtClient.tenantId,
@@ -109,7 +108,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Status Item Setup
-
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -123,48 +121,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenu() {
         // Right-click context menu
         let menu = NSMenu()
-
         let titleItem = NSMenuItem(title: "NextGuard DLP Agent v1.2.0", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
-
         menu.addItem(NSMenuItem.separator())
-
         connectionMenuItem = NSMenuItem(title: "Console: Connecting...", action: nil, keyEquivalent: "")
         connectionMenuItem.isEnabled = false
         menu.addItem(connectionMenuItem)
-
         statusMenuItem = NSMenuItem(title: "Status: Initializing...", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
-
         policiesMenuItem = NSMenuItem(title: "Policies: Loading...", action: nil, keyEquivalent: "")
         policiesMenuItem.isEnabled = false
         menu.addItem(policiesMenuItem)
-
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "About NextGuard", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
-
-        // Store menu for right-click; left-click shows popover
-        statusItem.menu = nil  // will be set on right-click only
+        statusItem.menu = nil
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
     // MARK: - Status Bar Button Click Handler
-
     @objc func statusBarButtonClicked() {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
-            // Show context menu
             statusItem.menu = buildContextMenu()
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
         } else {
-            // Left click: show SwiftUI popover
             if let button = statusItem.button {
                 GUIManager.shared.togglePopover(relativeTo: button)
             }
@@ -188,46 +175,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - MainActor Helpers
-
-    @MainActor
-    private func updateConnectionStatus(_ text: String) {
-        connectionMenuItem?.title = text
-    }
-
-    @MainActor
-    private func updateStatusMenuItem(_ text: String) {
-        statusMenuItem?.title = text
-    }
-
-    @MainActor
-    private func updatePoliciesStatus(_ text: String) {
-        policiesMenuItem?.title = text
-    }
-
-    @MainActor
-    private func updateStatusIcon(protected: Bool, alert: Bool = false) {
+    @MainActor private func updateConnectionStatus(_ text: String) { connectionMenuItem?.title = text }
+    @MainActor private func updateStatusMenuItem(_ text: String) { statusMenuItem?.title = text }
+    @MainActor private func updatePoliciesStatus(_ text: String) { policiesMenuItem?.title = text }
+    @MainActor private func updateStatusIcon(protected: Bool, alert: Bool = false) {
         if let button = statusItem.button {
             StatusBarIconHelper.update(button: button, protected: protected, alert: alert)
         }
     }
-
-    @MainActor
-    private func startScanningAnimation() {
+    @MainActor private func startScanningAnimation() {
         if let button = statusItem.button {
             scanningTimer = StatusBarIconHelper.startScanningAnimation(button: button)
         }
     }
-
-    @MainActor
-    private func stopScanningAnimation() {
+    @MainActor private func stopScanningAnimation() {
         scanningTimer?.invalidate()
         scanningTimer = nil
     }
 
     // MARK: - Actions
-
     @objc func showDashboard() {
-        // Show SwiftUI popover dashboard
         if let button = statusItem.button {
             GUIManager.shared.openPopover(relativeTo: button)
         }
@@ -255,9 +222,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             alert.runModal()
             Task {
                 for result in results {
-                    // Notify GUI
-                    let action: PolicyAction = result.action.rawValue == "block" ? .block : .audit
-                    GUIManager.shared.notifyIncident(policyName: result.ruleName, action: action)
+                    // Notify GUI - use RuleAction (GUI type)
+                    let guiAction: RuleAction = result.action.rawValue == "block" ? .block : .audit
+                    GUIManager.shared.notifyIncident(policyName: result.ruleName, action: guiAction)
                     // Report to console
                     await mgmtClient.reportIncident(
                         policyId: result.ruleId,
