@@ -85,7 +85,7 @@ class ManagementClient {
         heartbeatTimer = nil
     }
 
-    private func sendHeartbeat() {
+    func sendHeartbeat() {
         guard let agentId = agentId else { return }
         var body: [String: Any] = [
             "agentId": agentId,
