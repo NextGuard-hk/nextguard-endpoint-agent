@@ -144,7 +144,6 @@ struct LocalPolicyManagementView: View {
 
     private func ruleRow(_ rule: LocalPolicyRule) -> some View {
         HStack(spacing: 10) {
-            // Action color dot
             Circle()
                 .fill(colorForAction(rule.action))
                 .frame(width: 8, height: 8)
@@ -170,13 +169,11 @@ struct LocalPolicyManagementView: View {
                     .font(.caption2).foregroundColor(.secondary)
             }
             Spacer()
-            // Action badge
             Text(rule.action.rawValue)
                 .font(.caption).fontWeight(.medium)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Capsule().fill(colorForAction(rule.action).opacity(0.15)))
                 .foregroundColor(colorForAction(rule.action))
-            // Toggle
             Toggle("", isOn: Binding(
                 get: { rule.isEnabled },
                 set: { _ in engine.toggleRule(id: rule.id) }
@@ -189,7 +186,7 @@ struct LocalPolicyManagementView: View {
     }
 
     // MARK: - Helpers
-    private func colorForAction(_ action: DLPAction) -> Color {
+    private func colorForAction(_ action: LocalDLPAction) -> Color {
         switch action {
         case .block: return .red
         case .audit: return .orange
@@ -220,16 +217,15 @@ struct PolicyRuleEditorSheet: View {
 
     @State private var name: String = ""
     @State private var description: String = ""
-    @State private var action: DLPAction = .audit
-    @State private var category: LocalPolicyRule.PolicyCategory = .custom
+    @State private var action: LocalDLPAction = .audit
+    @State private var category: LocalPolicyCategory = .custom
     @State private var priority: Int = 50
     @State private var isEnabled: Bool = true
-    @State private var conditions: [PolicyCondition] = []
+    @State private var conditions: [LocalPolicyCondition] = []
     @State private var showAddCondition = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title Bar
             HStack {
                 Text(rule == nil ? "New Policy Rule" : "Edit Policy Rule")
                     .font(.headline)
@@ -243,7 +239,6 @@ struct PolicyRuleEditorSheet: View {
             .padding(16)
             Divider()
 
-            // Form
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     formField("Name") {
@@ -257,14 +252,14 @@ struct PolicyRuleEditorSheet: View {
                     HStack(spacing: 20) {
                         formField("Action") {
                             Picker("", selection: $action) {
-                                ForEach(DLPAction.allCases, id: \.self) { a in
+                                ForEach(LocalDLPAction.allCases, id: \.self) { a in
                                     Text(a.rawValue).tag(a)
                                 }
                             }.labelsHidden()
                         }
                         formField("Category") {
                             Picker("", selection: $category) {
-                                ForEach(LocalPolicyRule.PolicyCategory.allCases, id: \.self) { c in
+                                ForEach(LocalPolicyCategory.allCases, id: \.self) { c in
                                     Text(c.rawValue).tag(c)
                                 }
                             }.labelsHidden()
@@ -276,7 +271,6 @@ struct PolicyRuleEditorSheet: View {
                     Toggle("Enabled", isOn: $isEnabled)
                     Divider()
 
-                    // Conditions
                     HStack {
                         Text("Conditions").font(.subheadline.bold())
                         Spacer()
@@ -307,7 +301,7 @@ struct PolicyRuleEditorSheet: View {
         VStack(spacing: 6) {
             HStack {
                 Picker("Type", selection: $conditions[index].type) {
-                    ForEach(PolicyCondition.ConditionType.allCases, id: \.self) { t in
+                    ForEach(LocalPolicyCondition.ConditionType.allCases, id: \.self) { t in
                         Text(t.rawValue).tag(t)
                     }
                 }
@@ -327,7 +321,7 @@ struct PolicyRuleEditorSheet: View {
     }
 
     private func addEmptyCondition() {
-        conditions.append(PolicyCondition(
+        conditions.append(LocalPolicyCondition(
             id: UUID(),
             type: .contentMatch,
             pattern: "",
