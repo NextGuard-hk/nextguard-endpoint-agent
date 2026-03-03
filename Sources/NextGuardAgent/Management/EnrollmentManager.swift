@@ -77,6 +77,22 @@ class EnrollmentManager: ObservableObject {
         }
     }
 
+
+        // MARK: - Async Enroll Wrapper
+
+        /// Async/await wrapper for use in SwiftUI Task blocks
+        func enroll(token: String, consoleUrl: String) async throws {
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                                                                           self.enroll(consoleUrl: consoleUrl, enrollmentToken: token) { result in
+                                                                                                                                                        switch result {
+                                                                                                                                                                            case .success:
+                                                                                                                                                                                continuation.resume()
+                                                                                                                                                                            default:
+                                                                                                                                                                                continuation.resume(throwing: NSError(domain: "EnrollmentError", code: -1, userInfo: [NSLocalizedDescriptionKey: "\(result)"]))
+                                                                                                                                                                            }
+                                                                                                                                                    }
+                                                                       }
+                }
     /// Silent/Zero-Touch enrollment: called on startup if MDM provides token via env/plist
     func checkZeroTouchEnrollment() {
         // Read from plist injected by MDM at install time
