@@ -23,7 +23,7 @@ let package = Package(
       name: "NextGuardAgent",
       dependencies: [],
       path: "Sources/NextGuardAgent",
-      exclude: ["Sources"],
+      exclude: ["Sources", "MacApps/Sources"],
       linkerSettings: [
         .linkedFramework("AppKit"),
         .linkedFramework("SystemExtensions"),
