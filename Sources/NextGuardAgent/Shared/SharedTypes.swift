@@ -123,7 +123,7 @@ class HeartbeatService {
 
     func start() {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
-            ComplianceReporter.shared.sendHeartbeat()
+            ManagementClient.shared.startHeartbeat()
         }
     }
 
