@@ -1,60 +1,114 @@
 //
-// AgentGUIApp.swift
-// NextGuard Endpoint DLP Agent - macOS GUI
-// Copyright (c) 2026 NextGuard Technology
+//  AgentGUIApp.swift
+//  NextGuardAgent
 //
-// DESIGN REFERENCE: Inspired by Forcepoint DLP Agent, Palo Alto Cortex XDR,
-// McAfee DLP Endpoint, Zscaler Client Connector
+//  GUI Manager - integrates SwiftUI popover into existing AppDelegate
+//  NOTE: @main is in NextGuardApp.swift (App/). This file provides
+//  the GUIManager singleton that AppDelegate instantiates.
+//
+//  DESIGN REFERENCE: Forcepoint DLP Agent, Palo Alto Cortex XDR,
+//  McAfee DLP Endpoint, Zscaler Client Connector
 //
 
 import SwiftUI
 import AppKit
 
-// MARK: - App Entry Point
-@main
-struct NextGuardAgentApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+// MARK: - GUI Manager
+// Singleton that owns the NSPopover and SwiftUI content
+// Called from AppDelegate in NextGuardApp.swift
 
-    var body: some Scene {
-        Settings {
-            EmptyView()
+class GUIManager: NSObject {
+    static let shared = GUIManager()
+    
+    private var popover: NSPopover!
+    private var eventMonitor: EventMonitor?
+    
+    private override init() {
+        super.init()
+        setupPopover()
+    }
+    
+    private func setupPopover() {
+        popover = NSPopover()
+        popover.contentSize = NSSize(width: 360, height: 480)
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = NSHostingController(
+            rootView: AgentMainView()
+                .environmentObject(PolicyStore.shared)
+        )
+        
+        eventMonitor = EventMonitor(mask: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            if let self = self, self.popover.isShown {
+                self.closePopover()
+            }
+        }
+    }
+    
+    func togglePopover(relativeTo button: NSView) {
+        if popover.isShown {
+            closePopover()
+        } else {
+            openPopover(relativeTo: button)
+        }
+    }
+    
+    func openPopover(relativeTo button: NSView) {
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        eventMonitor?.start()
+    }
+    
+    func closePopover() {
+        popover.performClose(nil)
+        eventMonitor?.stop()
+    }
+    
+    // Called by AppDelegate when DLP engine reports an incident
+    func notifyIncident(policyName: String, action: PolicyAction) {
+        PolicyStore.shared.recordIncident(action: action)
+    }
+    
+    // Called by AppDelegate after console sync
+    func updateConnectionStatus(connected: Bool, tenantId: String?, consoleUrl: String) {
+        DispatchQueue.main.async {
+            PolicyStore.shared.agentStatus.isConnectedToConsole = connected
+            PolicyStore.shared.agentStatus.tenantId = tenantId
+            PolicyStore.shared.agentStatus.consoleUrl = consoleUrl
+            if connected {
+                PolicyStore.shared.agentStatus.lastSyncTime = Date()
+            }
+        }
+    }
+    
+    // Called by AppDelegate when policies are loaded
+    func updatePolicyCount(_ count: Int, source: String) {
+        DispatchQueue.main.async {
+            PolicyStore.shared.agentStatus.isProtected = count > 0
         }
     }
 }
 
-// MARK: - App Delegate
-class AppDelegate: NSObject, NSApplicationDelegate {
-    var statusBarController: StatusBarController?
-    var mainWindowController: NSWindowController?
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-        statusBarController = StatusBarController()
-        setupMainWindow()
+// MARK: - Event Monitor
+class EventMonitor {
+    private var monitor: Any?
+    private let mask: NSEvent.EventTypeMask
+    private let handler: (NSEvent?) -> Void
+    
+    init(mask: NSEvent.EventTypeMask, handler: @escaping (NSEvent?) -> Void) {
+        self.mask = mask
+        self.handler = handler
     }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return false
+    
+    deinit { stop() }
+    
+    func start() {
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handler)
     }
-
-    private func setupMainWindow() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 920, height: 660),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.center()
-        window.title = "NextGuard DLP Agent"
-        window.minSize = NSSize(width: 800, height: 560)
-        window.contentView = NSHostingView(rootView: AgentMainView())
-        window.setFrameAutosaveName("AgentMainWindow")
-        mainWindowController = NSWindowController(window: window)
-    }
-
-    func showMainWindow() {
-        mainWindowController?.showWindow(nil)
-        mainWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+    
+    func stop() {
+        if let monitor = monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
     }
 }
