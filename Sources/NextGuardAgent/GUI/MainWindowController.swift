@@ -4,6 +4,7 @@
 //
 //  Main application window controller with sidebar navigation
 //  Inspired by Forcepoint DLP, Palo Alto Cortex XDR, McAfee DLP, Zscaler Agent UIs
+//  NOTE: AgentStatusInfo is defined in PolicyStore.swift
 //
 
 import Cocoa
@@ -34,8 +35,6 @@ enum NavigationTab: String, CaseIterable, Identifiable {
 
 final class MainWindowController: NSWindowController, ObservableObject {
   @Published var selectedTab: NavigationTab = .dashboard
-  @Published var agentStatus = AgentStatusInfo()
-
   private var cancellables = Set<AnyCancellable>()
 
   convenience init() {
@@ -70,28 +69,12 @@ final class MainWindowController: NSWindowController, ObservableObject {
   }
 }
 
-// MARK: - Agent Status Info
-
-struct AgentStatusInfo {
-  var isConnected: Bool = false
-  var protectionEnabled: Bool = true
-  var agentVersion: String = "1.0.0"
-  var lastPolicySync: Date?
-  var activePolicyCount: Int = 0
-  var todayIncidentCount: Int = 0
-  var todayBlockCount: Int = 0
-  var todayAuditCount: Int = 0
-  var endpointId: String = ""
-  var enrollmentStatus: String = "Not Enrolled"
-}
-
 // MARK: - Main Content View (SwiftUI)
 
 struct MainContentView: View {
   @State private var selectedTab: NavigationTab = .dashboard
-  @State private var agentStatus = AgentStatusInfo()
-  @StateObject private var policyStore = PolicyStoreManager()
-  @StateObject private var incidentStore = IncidentStoreManager()
+  @EnvironmentObject var policyStore: PolicyStore
+  @StateObject private var incidentLog = IncidentLogStore()
 
   var body: some View {
     NavigationSplitView {
@@ -100,9 +83,8 @@ struct MainContentView: View {
       detailView
     }
     .frame(minWidth: 780, minHeight: 520)
-    .onReceive(NotificationCenter.default.publisher(for: .init("NextGuardNavigateTab"))) { notification in
-      if let tabName = notification.object as? String,
-         let tab = NavigationTab(rawValue: tabName) {
+    .onReceive(NotificationCenter.default.publisher(for: .init("NextGuardNavigateTab"))) { n in
+      if let tabName = n.object as? String, let tab = NavigationTab(rawValue: tabName) {
         selectedTab = tab
       }
     }
@@ -112,190 +94,246 @@ struct MainContentView: View {
 
   private var sidebarView: some View {
     VStack(spacing: 0) {
-      // Agent Header
       VStack(spacing: 8) {
         Image(systemName: "shield.checkmark.fill")
           .font(.system(size: 32))
           .foregroundColor(.accentColor)
         Text("NextGuard DLP")
           .font(.headline)
-        Text(agentStatus.isConnected ? "Connected" : "Disconnected")
+        Text(policyStore.agentStatus.isConnectedToConsole ? "Connected" : "Offline")
           .font(.caption)
-          .foregroundColor(agentStatus.isConnected ? .green : .red)
-          .padding(.horizontal, 8)
-          .padding(.vertical, 2)
-          .background(
-            Capsule()
-              .fill(agentStatus.isConnected ? Color.green.opacity(0.15) : Color.red.opacity(0.15))
-          )
+          .foregroundColor(policyStore.agentStatus.isConnectedToConsole ? .green : .orange)
+          .padding(.horizontal, 8).padding(.vertical, 2)
+          .background(Capsule().fill(
+            policyStore.agentStatus.isConnectedToConsole
+              ? Color.green.opacity(0.15)
+              : Color.orange.opacity(0.15)
+          ))
       }
       .padding(.vertical, 16)
 
       Divider()
 
-      // Navigation Items
       List(NavigationTab.allCases, selection: $selectedTab) { tab in
-        Label(tab.rawValue, systemImage: tab.icon)
-          .tag(tab)
+        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
       }
       .listStyle(.sidebar)
 
       Spacer()
 
-      // Footer - Version
       VStack(spacing: 4) {
         Divider()
-        Text("v\(agentStatus.agentVersion)")
-          .font(.caption2)
-          .foregroundColor(.secondary)
-        Text(agentStatus.enrollmentStatus)
-          .font(.caption2)
-          .foregroundColor(.secondary)
+        Text("v\(policyStore.agentStatus.agentVersion)")
+          .font(.caption2).foregroundColor(.secondary)
+        if let tid = policyStore.agentStatus.tenantId {
+          Text(tid).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+        }
       }
       .padding(.bottom, 8)
     }
     .frame(minWidth: 180, idealWidth: 200, maxWidth: 220)
   }
 
-  // MARK: - Detail View
+  // MARK: - Detail
 
   @ViewBuilder
   private var detailView: some View {
     switch selectedTab {
     case .dashboard:
-      StatusDashboardView(status: $agentStatus)
+      DashboardTabView()
     case .policies:
-      PolicyManagementContentView(store: policyStore)
+      PoliciesTabView()
     case .incidents:
-      IncidentLogContentView(store: incidentStore)
+      IncidentsTabView(store: incidentLog)
     case .settings:
       AgentSettingsContentView()
     }
   }
 }
 
-// MARK: - Policy Store Manager
+// MARK: - Dashboard Tab
 
-class PolicyStoreManager: ObservableObject {
-  @Published var policies: [LocalPolicy] = []
-  @Published var isLoading: Bool = false
+struct DashboardTabView: View {
+  @EnvironmentObject var policyStore: PolicyStore
+  @State private var animateShield = false
 
-  struct LocalPolicy: Identifiable {
-    let id = UUID()
-    var name: String
-    var description: String
-    var action: PolicyAction
-    var isEnabled: Bool
-    var category: String
-    var patterns: [String]
-    var source: PolicySource
-    var lastUpdated: Date
-  }
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 20) {
+        // Status card
+        HStack(spacing: 20) {
+          ZStack {
+            Circle()
+              .fill(policyStore.agentStatus.isProtected ? Color.green.opacity(0.15) : Color.red.opacity(0.15))
+              .frame(width: 80, height: 80)
+            Image(systemName: policyStore.agentStatus.isProtected ? "shield.checkmark.fill" : "shield.slash.fill")
+              .font(.system(size: 36))
+              .foregroundColor(policyStore.agentStatus.isProtected ? .green : .red)
+              .scaleEffect(animateShield ? 1.05 : 1.0)
+          }
+          .onAppear {
+            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+              animateShield = true
+            }
+          }
 
-  enum PolicyAction: String, CaseIterable {
-    case block = "Block"
-    case audit = "Audit"
-    case allow = "Allow"
-    case encrypt = "Encrypt"
+          VStack(alignment: .leading, spacing: 6) {
+            Text(policyStore.agentStatus.isProtected ? "Protection Active" : "Protection Paused")
+              .font(.title2.bold())
+            Text(policyStore.agentStatus.isConnectedToConsole
+              ? "Connected to NextGuard Console"
+              : "Offline Mode — Local Policies Active")
+              .font(.subheadline).foregroundColor(.secondary)
+            if let sync = policyStore.agentStatus.lastSyncTime {
+              Label("Synced \(sync, style: .relative)", systemImage: "arrow.triangle.2.circlepath")
+                .font(.caption).foregroundColor(.secondary)
+            }
+          }
+          Spacer()
+          Button("Sync Now") {
+            NotificationCenter.default.post(name: .init("NextGuardSyncRequested"), object: nil)
+          }
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(
+          policyStore.agentStatus.isProtected ? Color.green.opacity(0.3) : Color.red.opacity(0.3), lineWidth: 1
+        ))
 
-    var icon: String {
-      switch self {
-      case .block: return "xmark.shield.fill"
-      case .audit: return "eye.fill"
-      case .allow: return "checkmark.shield"
-      case .encrypt: return "lock.shield.fill"
+        // Stats grid
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 16) {
+          DashStatCard(title: "Active Policies", value: "\(policyStore.policies.filter { $0.enabled }.count)", icon: "doc.text.fill", color: .blue)
+          DashStatCard(title: "Today Incidents", value: "\(policyStore.agentStatus.totalIncidentsToday)", icon: "exclamationmark.triangle.fill", color: .orange)
+          DashStatCard(title: "Blocked", value: "\(policyStore.agentStatus.blockedToday)", icon: "xmark.shield.fill", color: .red)
+          DashStatCard(title: "Audited", value: "\(policyStore.agentStatus.auditedToday)", icon: "eye.fill", color: .purple)
+        }
       }
+      .padding(24)
     }
-
-    var color: Color {
-      switch self {
-      case .block: return .red
-      case .audit: return .orange
-      case .allow: return .green
-      case .encrypt: return .blue
-      }
-    }
-  }
-
-  enum PolicySource: String {
-    case server = "Server"
-    case local = "Local"
-  }
-
-  func loadPolicies() {
-    isLoading = true
-    // Load from local storage and merge with server policies
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-      self?.isLoading = false
-    }
-  }
-
-  func addLocalPolicy(_ policy: LocalPolicy) {
-    policies.append(policy)
-    savePolicies()
-  }
-
-  func togglePolicy(_ policy: LocalPolicy) {
-    if let index = policies.firstIndex(where: { $0.id == policy.id }) {
-      policies[index].isEnabled.toggle()
-      savePolicies()
-    }
-  }
-
-  func deletePolicy(_ policy: LocalPolicy) {
-    policies.removeAll { $0.id == policy.id }
-    savePolicies()
-  }
-
-  private func savePolicies() {
-    // Persist to local storage
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 
-// MARK: - Incident Store Manager
+struct DashStatCard: View {
+  let title: String; let value: String; let icon: String; let color: Color
+  var body: some View {
+    VStack(spacing: 8) {
+      Image(systemName: icon).font(.title2).foregroundColor(color)
+      Text(value).font(.title.bold())
+      Text(title).font(.caption).foregroundColor(.secondary)
+    }
+    .frame(maxWidth: .infinity).padding(16)
+    .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+    .overlay(RoundedRectangle(cornerRadius: 10).stroke(color.opacity(0.2), lineWidth: 1))
+  }
+}
 
-class IncidentStoreManager: ObservableObject {
-  @Published var incidents: [DLPIncident] = []
-  @Published var isLoading: Bool = false
+// MARK: - Policies Tab
 
-  struct DLPIncident: Identifiable {
+struct PoliciesTabView: View {
+  @EnvironmentObject var policyStore: PolicyStore
+  @State private var showAdd = false
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        Image(systemName: "doc.text.fill").foregroundColor(.blue)
+        Text("DLP Policies").font(.title2.bold())
+        Spacer()
+        Button(action: { showAdd = true }) {
+          Label("Add Local Policy", systemImage: "plus")
+        }
+      }
+      .padding(16)
+      Divider()
+      List(policyStore.policies) { policy in
+        HStack {
+          Circle()
+            .fill(policy.action == .block ? Color.red : policy.action == .audit ? Color.orange : Color.green)
+            .frame(width: 8, height: 8)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(policy.name).font(.body.bold())
+            Text(policy.description).font(.caption).foregroundColor(.secondary)
+          }
+          Spacer()
+          Text(policy.action.displayName)
+            .font(.caption)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(
+              policy.action == .block ? Color.red.opacity(0.15) :
+              policy.action == .audit ? Color.orange.opacity(0.15) : Color.green.opacity(0.15)
+            ))
+          Toggle("", isOn: Binding(
+            get: { policy.enabled },
+            set: { _ in policyStore.togglePolicy(policy) }
+          ))
+          .labelsHidden()
+        }
+        .padding(.vertical, 4)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
+// MARK: - Incident Log Store
+
+class IncidentLogStore: ObservableObject {
+  @Published var incidents: [LocalIncident] = []
+
+  struct LocalIncident: Identifiable {
     let id = UUID()
     var timestamp: Date
     var policyName: String
     var action: String
-    var filePath: String
-    var destination: String
-    var severity: Severity
     var details: String
-    var isAcknowledged: Bool = false
+    var severity: String
   }
+}
 
-  enum Severity: String, CaseIterable {
-    case critical = "Critical"
-    case high = "High"
-    case medium = "Medium"
-    case low = "Low"
+// MARK: - Incidents Tab
 
-    var color: Color {
-      switch self {
-      case .critical: return .red
-      case .high: return .orange
-      case .medium: return .yellow
-      case .low: return .green
+struct IncidentsTabView: View {
+  @ObservedObject var store: IncidentLogStore
+  @State private var searchText = ""
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+        Text("Incident Log").font(.title2.bold())
+        Spacer()
+        TextField("Search...", text: $searchText)
+          .textFieldStyle(.roundedBorder).frame(width: 200)
+      }
+      .padding(16)
+      Divider()
+      if store.incidents.isEmpty {
+        VStack(spacing: 12) {
+          Image(systemName: "checkmark.shield").font(.system(size: 48)).foregroundColor(.green)
+          Text("No Incidents").font(.title3.bold())
+          Text("No DLP violations detected on this endpoint.")
+            .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        List(store.incidents.filter { i in
+          searchText.isEmpty || i.policyName.localizedCaseInsensitiveContains(searchText)
+        }) { incident in
+          HStack {
+            Circle()
+              .fill(incident.action == "Block" ? Color.red : Color.orange)
+              .frame(width: 8, height: 8)
+            VStack(alignment: .leading) {
+              Text(incident.policyName).font(.body.bold())
+              Text(incident.timestamp, style: .relative).font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Text(incident.action).font(.caption)
+          }
+        }
       }
     }
-  }
-
-  func loadIncidents() {
-    isLoading = true
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-      self?.isLoading = false
-    }
-  }
-
-  func acknowledgeIncident(_ incident: DLPIncident) {
-    if let index = incidents.firstIndex(where: { $0.id == incident.id }) {
-      incidents[index].isAcknowledged = true
-    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
