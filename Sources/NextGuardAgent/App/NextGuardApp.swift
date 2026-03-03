@@ -43,16 +43,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         menu.addItem(NSMenuItem.separator())
+
         connectionMenuItem = NSMenuItem(title: "Console: Connecting...", action: nil, keyEquivalent: "")
         connectionMenuItem.isEnabled = false
         menu.addItem(connectionMenuItem)
+
         statusMenuItem = NSMenuItem(title: "Status: Initializing...", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
+
         policiesMenuItem = NSMenuItem(title: "Policies: Loading...", action: nil, keyEquivalent: "")
         policiesMenuItem.isEnabled = false
         menu.addItem(policiesMenuItem)
         menu.addItem(NSMenuItem.separator())
+
         menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c"))
         menu.addItem(NSMenuItem.separator())
@@ -98,6 +102,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             print("[OK] Heartbeat started")
             policyEngine.startPolicyRefresh(interval: 300)
             print("[OK] Policy refresh started (every 5 min)")
+
+            // Step 4: Start real-time clipboard monitoring (auto-scan every 2 seconds)
+            ClipboardMonitor.shared.startMonitoring()
+            print("[OK] Real-time clipboard monitoring started")
+
             await updateStatusMenuItem("Status: Monitoring Active")
         }
 
@@ -135,6 +144,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = "Found \(matchCount) matches in \(results.count) rules."
             alert.alertStyle = .critical
             alert.runModal()
+
             Task {
                 for result in results {
                     await mgmtClient.reportIncident(
@@ -156,6 +166,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func quitApp() {
         print("[OK] NextGuard DLP Agent shutting down")
+        ClipboardMonitor.shared.stopMonitoring()
         mgmtClient.stopHeartbeat()
         policyEngine.stopPolicyRefresh()
         NSApplication.shared.terminate(nil)
