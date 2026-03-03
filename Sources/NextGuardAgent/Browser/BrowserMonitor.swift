@@ -162,7 +162,7 @@ final class BrowserMonitor: @unchecked Sendable {
       let ext = (name as NSString).pathExtension.lowercased()
       if monitoredExtensions.contains(ext) {
         // Check with PolicyManager
-        let (action, policy) = PolicyManager.shared.evaluate(
+        let (action, policyId, message) = PolicyManager.shared.evaluate(
           channel: .webUpload, content: name,
           metadata: ["fileExtension": ext, "fileSize": "\(contentLength)", "domain": URL(string: url)?.host ?? ""]
         )
