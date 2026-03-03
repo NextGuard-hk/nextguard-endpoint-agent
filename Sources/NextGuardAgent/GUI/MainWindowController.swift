@@ -35,7 +35,6 @@ final class MainWindowController: NSWindowController, ObservableObject {
   @Published var selectedTab: NavigationTab = .dashboard
 
   convenience init() {
-    // Inject PolicyStore.shared as environment object
     let contentView = MainContentView()
       .environmentObject(PolicyStore.shared)
     let hostingController = NSHostingController(rootView: contentView)
@@ -67,7 +66,7 @@ final class MainWindowController: NSWindowController, ObservableObject {
 struct MainContentView: View {
   @State private var selectedTab: NavigationTab = .dashboard
   @EnvironmentObject var policyStore: PolicyStore
-  @StateObject private var incidentLog = IncidentLogStore()
+  @StateObject private var incidentStore = IncidentStoreManager.shared
 
   var body: some View {
     NavigationSplitView {
@@ -105,7 +104,6 @@ struct MainContentView: View {
       }
       .listStyle(.sidebar)
       Spacer()
-      // Agent Mode Badge
       SidebarAgentBadge()
       VStack(spacing: 4) {
         Divider()
@@ -125,7 +123,7 @@ struct MainContentView: View {
     switch selectedTab {
     case .dashboard: DashboardTabView()
     case .policies: LocalPolicyManagementView()
-    case .incidents: IncidentsTabView(store: incidentLog)
+    case .incidents: IncidentLogContentView(store: incidentStore)
     case .settings: AgentSettingsContentView()
     }
   }
@@ -140,10 +138,8 @@ struct DashboardTabView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 20) {
-        // Agent Mode Overlay
         AgentModeDashboardOverlay()
 
-        // Protection Status Card
         HStack(spacing: 20) {
           ZStack {
             Circle()
@@ -182,7 +178,6 @@ struct DashboardTabView: View {
           policyStore.agentStatus.isProtected ? Color.green.opacity(0.3) : Color.red.opacity(0.3), lineWidth: 1
         ))
 
-        // Stats Grid
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 16) {
           DashStatCard(title: "Active Policies",
                        value: "\(policyStore.policies.filter { $0.enabled }.count)",
@@ -215,65 +210,5 @@ struct DashStatCard: View {
     .frame(maxWidth: .infinity).padding(16)
     .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
     .overlay(RoundedRectangle(cornerRadius: 10).stroke(color.opacity(0.2), lineWidth: 1))
-  }
-}
-
-// MARK: - Incident Log Store
-
-class IncidentLogStore: ObservableObject {
-  @Published var incidents: [LocalIncident] = []
-  struct LocalIncident: Identifiable {
-    let id = UUID()
-    var timestamp: Date
-    var policyName: String
-    var action: String
-    var details: String
-    var severity: String
-  }
-}
-
-// MARK: - Incidents Tab
-
-struct IncidentsTabView: View {
-  @ObservedObject var store: IncidentLogStore
-  @State private var searchText = ""
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
-        Text("Incident Log").font(.title2.bold())
-        Spacer()
-        TextField("Search...", text: $searchText)
-          .textFieldStyle(.roundedBorder).frame(width: 200)
-      }
-      .padding(16)
-      Divider()
-      if store.incidents.isEmpty {
-        VStack(spacing: 12) {
-          Image(systemName: "checkmark.shield").font(.system(size: 48)).foregroundColor(.green)
-          Text("No Incidents").font(.title3.bold())
-          Text("No DLP violations detected on this endpoint.").foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        List(store.incidents.filter { i in
-          searchText.isEmpty || i.policyName.localizedCaseInsensitiveContains(searchText)
-        }) { incident in
-          HStack {
-            Circle()
-              .fill(incident.action == "Block" ? Color.red : Color.orange)
-              .frame(width: 8, height: 8)
-            VStack(alignment: .leading) {
-              Text(incident.policyName).font(.body.bold())
-              Text(incident.timestamp, style: .relative).font(.caption).foregroundColor(.secondary)
-            }
-            Spacer()
-            Text(incident.action).font(.caption)
-          }
-        }
-      }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
