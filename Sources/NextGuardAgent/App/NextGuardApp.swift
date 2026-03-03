@@ -33,7 +33,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Self.logger.info("Application launched")
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "shield.checkered", accessibilityDescription: "NextGuard DLP")
             button.toolTip = "NextGuard DLP Agent - Active"
@@ -44,19 +43,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         menu.addItem(NSMenuItem.separator())
-
         connectionMenuItem = NSMenuItem(title: "Console: Connecting...", action: nil, keyEquivalent: "")
         connectionMenuItem.isEnabled = false
         menu.addItem(connectionMenuItem)
-
         statusMenuItem = NSMenuItem(title: "Status: Initializing...", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
-
         policiesMenuItem = NSMenuItem(title: "Policies: Loading...", action: nil, keyEquivalent: "")
         policiesMenuItem.isEnabled = false
         menu.addItem(policiesMenuItem)
-
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c"))
@@ -65,11 +60,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         statusItem.menu = menu
 
-        // Initialize: register with management console, load policies, start heartbeat
+        // Initialize: register, load policies from console, start heartbeat + policy refresh
         Task {
-            // Step 0: Set tenant ID if not already configured
-            // Default to "tenant-demo". In production, this would come from
-            // MDM profile, enrollment token, or configuration file.
             if mgmtClient.tenantId == nil {
                 mgmtClient.setTenantId("tenant-demo")
             }
@@ -87,10 +79,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("[WARN] Running in local mode - console unreachable")
             }
 
-            // Step 2: Pull policies from console (fallback to local)
+            // Step 2: Pull policies from console and load into DLP engine
             let remotePolicies = await mgmtClient.pullPolicies()
             if !remotePolicies.isEmpty {
-                await policyEngine.loadPolicies()
+                policyEngine.loadPoliciesFromConsole(remotePolicies)
                 let count = policyEngine.activePolicies.count
                 await updatePoliciesStatus("Policies: \(count) rules (remote)")
                 print("[OK] \(count) policies loaded from console")
@@ -101,9 +93,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("[OK] \(count) policies loaded locally")
             }
 
-            // Step 3: Start heartbeat
+            // Step 3: Start heartbeat + periodic policy refresh (every 5 min)
             mgmtClient.startHeartbeat()
             print("[OK] Heartbeat started")
+            policyEngine.startPolicyRefresh(interval: 300)
+            print("[OK] Policy refresh started (every 5 min)")
             await updateStatusMenuItem("Status: Monitoring Active")
         }
 
@@ -113,23 +107,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func updateConnectionStatus(_ text: String) {
-        connectionMenuItem.title = text
-    }
-
+    private func updateConnectionStatus(_ text: String) { connectionMenuItem.title = text }
     @MainActor
-    private func updateStatusMenuItem(_ text: String) {
-        statusMenuItem.title = text
-    }
-
+    private func updateStatusMenuItem(_ text: String) { statusMenuItem.title = text }
     @MainActor
-    private func updatePoliciesStatus(_ text: String) {
-        policiesMenuItem.title = text
-    }
+    private func updatePoliciesStatus(_ text: String) { policiesMenuItem.title = text }
 
-    @objc func showDashboard() {
-        MainWindowController.shared.showWindow()
-    }
+    @objc func showDashboard() { MainWindowController.shared.showWindow() }
 
     @objc func scanClipboard() {
         let pasteboard = NSPasteboard.general
@@ -151,14 +135,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = "Found \(matchCount) matches in \(results.count) rules."
             alert.alertStyle = .critical
             alert.runModal()
-            // Report incidents to management console
             Task {
                 for result in results {
                     await mgmtClient.reportIncident(
-                        policyId: result.ruleId,
-                        channel: "clipboard",
-                        severity: result.severity.rawValue,
-                        action: result.action.rawValue,
+                        policyId: result.ruleId, channel: "clipboard",
+                        severity: result.severity.rawValue, action: result.action.rawValue,
                         matchCount: result.matches.count,
                         details: "Clipboard scan: \(result.matches.count) matches for policy \(result.ruleName)"
                     )
@@ -176,6 +157,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func quitApp() {
         print("[OK] NextGuard DLP Agent shutting down")
         mgmtClient.stopHeartbeat()
+        policyEngine.stopPolicyRefresh()
         NSApplication.shared.terminate(nil)
     }
 }
