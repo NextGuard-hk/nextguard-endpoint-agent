@@ -205,5 +205,4 @@ class ManagementClient {
             completion(success)
         }.resume()
     }
-    }
 }
