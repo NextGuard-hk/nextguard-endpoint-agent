@@ -19,7 +19,7 @@ final class MenuBarController: NSObject, ObservableObject {
   private var cancellables = Set<AnyCancellable>()
 
   @Published var connectionStatus: ConnectionStatus = .disconnected
-  @Published var agentMode: AgentMode = .monitor
+  @Published var agentMode: AgentMode = .standalone
   @Published var lastSyncTime: Date?
   @Published var pendingIncidentCount: Int = 0
   @Published var isProtectionActive: Bool = true
@@ -89,10 +89,10 @@ final class MenuBarController: NSObject, ObservableObject {
 
     // Agent Mode
     let modeItem = NSMenuItem(
-      title: "Mode: \(agentMode.displayName)",
+      title: "Mode: \(agentMode.rawValue.capitalized)",
       action: nil, keyEquivalent: ""
     )
-    modeItem.image = NSImage(systemSymbolName: agentMode.icon, accessibilityDescription: nil)
+    modeItem.image = NSImage(systemSymbolName: (agentMode == .managed ? "building.2.fill" : "person.fill"), accessibilityDescription: nil)
     menu.addItem(modeItem)
     menu.addItem(NSMenuItem.separator())
 
