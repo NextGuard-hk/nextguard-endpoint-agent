@@ -91,6 +91,7 @@ struct PolicyConditions: Codable {
     var complianceFrameworks: [String] // ["PCI-DSS", "GDPR", "HIPAA"]
 
     init() {
+                complianceFrameworks = []
         requiresContentScan = false
     }
 }
