@@ -10,8 +10,8 @@ import SwiftUI
 struct PolicyManagementView: View {
     @EnvironmentObject var policyStore: PolicyStore
     @State private var showingAddPolicy = false
-    @State private var editingPolicy: PolicyRule?
-    
+    @State private var editingPolicy: GUIPolicyRule?
+
     var body: some View {
         VStack(spacing: 0) {
             // Toolbar
@@ -30,9 +30,9 @@ struct PolicyManagementView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(Color(NSColor.controlBackgroundColor))
-            
+
             Divider()
-            
+
             // Policy List
             if policyStore.policies.isEmpty {
                 emptyState
@@ -60,7 +60,7 @@ struct PolicyManagementView: View {
             }
         }
     }
-    
+
     var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "doc.text.magnifyingglass")
@@ -77,12 +77,11 @@ struct PolicyManagementView: View {
 }
 
 // MARK: - Policy Row
-
 struct PolicyRowView: View {
-    let policy: PolicyRule
+    let policy: GUIPolicyRule
     let onEdit: () -> Void
     @EnvironmentObject var policyStore: PolicyStore
-    
+
     var actionColor: Color {
         switch policy.action {
         case .block: return .red
@@ -90,7 +89,7 @@ struct PolicyRowView: View {
         case .allow: return .green
         }
     }
-    
+
     var body: some View {
         HStack(spacing: 10) {
             // Toggle
@@ -101,13 +100,12 @@ struct PolicyRowView: View {
             .toggleStyle(.switch)
             .controlSize(.mini)
             .labelsHidden()
-            
+
             // Info
             VStack(alignment: .leading, spacing: 2) {
                 Text(policy.name)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(policy.enabled ? .primary : .secondary)
-                
                 HStack(spacing: 6) {
                     // Action Badge
                     Text(policy.action.displayName.uppercased())
@@ -116,7 +114,6 @@ struct PolicyRowView: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 3).fill(actionColor.opacity(0.12)))
-                    
                     if !policy.keywords.isEmpty {
                         Text("\(policy.keywords.count) keywords")
                             .font(.system(size: 10))
@@ -129,9 +126,9 @@ struct PolicyRowView: View {
                     }
                 }
             }
-            
+
             Spacer()
-            
+
             // Edit
             Button(action: onEdit) {
                 Image(systemName: "pencil")
@@ -148,21 +145,20 @@ struct PolicyRowView: View {
 }
 
 // MARK: - Policy Edit Sheet
-
 struct PolicyEditView: View {
-    let existingPolicy: PolicyRule?
-    let onSave: (PolicyRule) -> Void
-    
+    let existingPolicy: GUIPolicyRule?
+    let onSave: (GUIPolicyRule) -> Void
+
     @State private var name: String
     @State private var description: String
     @State private var enabled: Bool
-    @State private var action: PolicyAction
+    @State private var action: RuleAction
     @State private var keywordsText: String
     @State private var fileTypesText: String
     @State private var destinationsText: String
     @Environment(\.dismiss) private var dismiss
-    
-    init(policy: PolicyRule?, onSave: @escaping (PolicyRule) -> Void) {
+
+    init(policy: GUIPolicyRule?, onSave: @escaping (GUIPolicyRule) -> Void) {
         self.existingPolicy = policy
         self.onSave = onSave
         _name = State(initialValue: policy?.name ?? "")
@@ -173,7 +169,7 @@ struct PolicyEditView: View {
         _fileTypesText = State(initialValue: policy?.fileTypes.joined(separator: ", ") ?? "")
         _destinationsText = State(initialValue: policy?.destinations.joined(separator: ", ") ?? "")
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Sheet Header
@@ -187,68 +183,67 @@ struct PolicyEditView: View {
             }
             .padding(14)
             .background(Color(NSColor.controlBackgroundColor))
-            
+
             Divider()
-            
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     // Name
                     fieldLabel("Rule Name")
                     TextField("e.g. Credit Card Detection", text: $name)
                         .textFieldStyle(.roundedBorder)
-                    
+
                     // Description
                     fieldLabel("Description")
                     TextField("Optional description", text: $description)
                         .textFieldStyle(.roundedBorder)
-                    
+
                     // Action
                     fieldLabel("Action When Matched")
                     Picker("", selection: $action) {
-                        ForEach(PolicyAction.allCases, id: \.self) { action in
+                        ForEach(RuleAction.allCases, id: \.self) { act in
                             HStack {
                                 Circle()
-                                    .fill(action == .block ? Color.red : action == .audit ? Color.orange : Color.green)
+                                    .fill(act == .block ? Color.red : act == .audit ? Color.orange : Color.green)
                                     .frame(width: 8, height: 8)
-                                Text(action.displayName)
+                                Text(act.displayName)
                             }
-                            .tag(action)
+                            .tag(act)
                         }
                     }
                     .pickerStyle(.segmented)
-                    
+
                     // Action Description
                     actionDescription
-                    
+
                     // Keywords
                     fieldLabel("Keywords (comma-separated)")
                     TextField("e.g. confidential, secret, internal", text: $keywordsText)
                         .textFieldStyle(.roundedBorder)
-                    
+
                     // File Types
                     fieldLabel("File Types (comma-separated)")
                     TextField("e.g. .pdf, .docx, .xlsx", text: $fileTypesText)
                         .textFieldStyle(.roundedBorder)
-                    
+
                     // Destinations
                     fieldLabel("Destinations (comma-separated)")
                     TextField("e.g. email, usb, cloud, web", text: $destinationsText)
                         .textFieldStyle(.roundedBorder)
-                    
+
                     // Enabled
                     Toggle("Enable this rule", isOn: $enabled)
                         .font(.system(size: 12))
                 }
                 .padding(14)
             }
-            
+
             Divider()
-            
+
             // Footer
             HStack {
                 if existingPolicy != nil {
                     Button("Delete Rule") {
-                        // handled by caller
                         dismiss()
                     }
                     .foregroundColor(.red)
@@ -263,7 +258,7 @@ struct PolicyEditView: View {
         }
         .frame(width: 360, height: 520)
     }
-    
+
     var actionDescription: some View {
         Group {
             switch action {
@@ -282,19 +277,19 @@ struct PolicyEditView: View {
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.08)))
     }
-    
+
     func fieldLabel(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .medium))
             .foregroundColor(.secondary)
     }
-    
+
     func save() {
         let keywords = keywordsText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let fileTypes = fileTypesText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let destinations = destinationsText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        
-        var policy = existingPolicy ?? PolicyRule(name: name)
+
+        var policy = existingPolicy ?? GUIPolicyRule(name: name)
         policy.name = name
         policy.description = description
         policy.enabled = enabled
@@ -302,7 +297,7 @@ struct PolicyEditView: View {
         policy.keywords = keywords
         policy.fileTypes = fileTypes
         policy.destinations = destinations
-        
+
         onSave(policy)
         dismiss()
     }
