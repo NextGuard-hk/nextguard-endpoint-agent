@@ -302,9 +302,3 @@ struct PolicyEditView: View {
         dismiss()
     }
 }
-
-#Preview {
-    PolicyManagementView()
-        .environmentObject(PolicyStore.shared)
-        .frame(width: 360, height: 350)
-}
