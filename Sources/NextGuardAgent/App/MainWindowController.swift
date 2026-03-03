@@ -158,9 +158,9 @@ class MainWindowController: NSObject {
         for p in policyEngine.activePolicies {
             x = 20
             let n = NSTextField(labelWithString: p.name); n.font = .systemFont(ofSize: 12); n.frame = NSRect(x: x, y: y, width: 220, height: 18); container.addSubview(n); x += 220
-            let cat = NSTextField(labelWithString: p.category); cat.font = .systemFont(ofSize: 12); cat.textColor = .secondaryLabelColor; cat.frame = NSRect(x: x, y: y, width: 100, height: 18); container.addSubview(cat); x += 100
+            let cat = NSTextField(labelWithString: p.complianceFramework); cat.font = .systemFont(ofSize: 12); cat.textColor = .secondaryLabelColor; cat.frame = NSRect(x: x, y: y, width: 100, height: 18); container.addSubview(cat); x += 100
             let sev = NSTextField(labelWithString: p.severity.rawValue); sev.font = .boldSystemFont(ofSize: 11)
-            switch p.severity { case .critical: sev.textColor = .systemRed; case .high: sev.textColor = .systemOrange; case .medium: sev.textColor = .systemYellow; case .low: sev.textColor = .systemGreen }
+            switch p.severity { case .critical: sev.textColor = .systemRed; case .high: sev.textColor = .systemOrange; case .medium: sev.textColor = .systemYellow; case .low: sev.textColor = .systemGreen; case .info: sev.textColor = .systemGray }
             sev.frame = NSRect(x: x, y: y, width: 80, height: 18); container.addSubview(sev); x += 80
             let act = NSTextField(labelWithString: p.action.rawValue); act.font = .systemFont(ofSize: 12); act.frame = NSRect(x: x, y: y, width: 100, height: 18); container.addSubview(act)
             y += 24
