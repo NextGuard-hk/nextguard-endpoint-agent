@@ -21,7 +21,7 @@ final class ClipboardMonitor {
 
     private var pollTimer: Timer?
     private var lastChangeCount: Int = 0
-    private var isActive: Bool = false
+    private(set) var isActive: Bool = false
     private var totalInspected: Int = 0
     private var totalBlocked: Int = 0
 
@@ -53,13 +53,14 @@ final class ClipboardMonitor {
     private func checkClipboard() {
         let pasteboard = NSPasteboard.general
         let currentCount = pasteboard.changeCount
+
         guard currentCount != lastChangeCount else { return }
         lastChangeCount = currentCount
 
         // Get clipboard text content
         guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return }
-        totalInspected += 1
 
+        totalInspected += 1
         let sourceApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
 
         // Scan with DLP engine using POLICY-DEFINED rules
