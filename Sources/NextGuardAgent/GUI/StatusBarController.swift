@@ -13,7 +13,7 @@ import AppKit
 // Called by AppDelegate to update icon appearance
 
 struct StatusBarIconHelper {
-    
+
     /// Apply protection status styling to a status item button
     static func update(
         button: NSStatusBarButton,
@@ -23,7 +23,7 @@ struct StatusBarIconHelper {
     ) {
         let iconName: String
         let tintColor: NSColor
-        
+
         if alert {
             iconName = "shield.slash.fill"
             tintColor = .systemRed
@@ -37,7 +37,7 @@ struct StatusBarIconHelper {
             iconName = "shield.slash.fill"
             tintColor = .systemOrange
         }
-        
+
         let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
         if let image = NSImage(
             systemSymbolName: iconName,
@@ -47,35 +47,26 @@ struct StatusBarIconHelper {
             button.contentTintColor = tintColor
         }
     }
-    
-    /// Start scanning animation on a status item button
-    /// Returns the timer - caller must invalidate it to stop
-    static func startScanningAnimation(button: NSStatusBarButton) -> Timer {
-        var frame = 0
-        return Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            update(button: button, protected: true, scanning: frame % 2 == 0)
-            frame += 1
+
+    /// Animate scanning state with alternating icons
+    /// Returns the Timer so caller can invalidate it when done
+    @discardableResult
+    static func startScanningAnimation(_ button: NSStatusBarButton) -> Timer {
+        var toggle = false
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { _ in
+            toggle.toggle()
+            DispatchQueue.main.async {
+                let iconName = toggle ? "shield.lefthalf.filled" : "shield.righthalf.filled"
+                let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+                if let image = NSImage(
+                    systemSymbolName: iconName,
+                    accessibilityDescription: "NextGuard DLP Scanning"
+                )?.withSymbolConfiguration(config) {
+                    button.image = image
+                    button.contentTintColor = .systemBlue
+                }
+            }
         }
-    }
-}
-
-// MARK: - Alert Helper
-// Shows macOS system notifications for DLP incidents
-
-struct DLPNotificationHelper {
-    
-    static func showBlockAlert(policyName: String, channel: String) {
-        let notification = NSUserNotification()
-        notification.title = "NextGuard DLP - Blocked"
-        notification.informativeText = "Transfer blocked: \(policyName) violation on \(channel)"
-        notification.soundName = NSUserNotificationDefaultSoundName
-        NSUserNotificationCenter.default.deliver(notification)
-    }
-    
-    static func showAuditAlert(policyName: String, channel: String) {
-        let notification = NSUserNotification()
-        notification.title = "NextGuard DLP - Audited"
-        notification.informativeText = "Sensitive data detected: \(policyName) on \(channel)"
-        NSUserNotificationCenter.default.deliver(notification)
+        return timer
     }
 }
