@@ -26,16 +26,22 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
     private(set) var isActive: Bool = false
     private var totalInspected: Int = 0
     private var totalBlocked: Int = 0
+    private var notificationsConfigured: Bool = false
 
     private let pollInterval: TimeInterval = 0.5
 
     private override init() {
         super.init()
-        setupNotifications()
+        // NOTE: Do NOT call setupNotifications() here.
+        // static let shared init runs via dispatch_once which may not be on main thread.
+        // Notification setup is deferred to startMonitoring() on main thread.
     }
 
-    // MARK: - Notification Setup
+    // MARK: - Notification Setup (must be called on main thread)
     private func setupNotifications() {
+        guard !notificationsConfigured else { return }
+        notificationsConfigured = true
+
         let center = UNUserNotificationCenter.current()
         center.delegate = self
 
@@ -87,6 +93,16 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
     // MARK: - Start / Stop
     func startMonitoring() {
         guard !isActive else { return }
+
+        // Setup notifications on main thread (deferred from init)
+        if Thread.isMainThread {
+            setupNotifications()
+        } else {
+            DispatchQueue.main.sync {
+                setupNotifications()
+            }
+        }
+
         lastChangeCount = NSPasteboard.general.changeCount
         pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             self?.checkClipboard()
@@ -139,7 +155,7 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
 
             sendNotification(
                 title: "NextGuard DLP - Content BLOCKED",
-                body: "Sensitive data blocked in \(sourceApp).\nRules: \(ruleNames) | Severity: \(severities) | Matches: \(matchCount)\nClipboard has been cleared.",
+                body: "Sensitive data blocked in \(sourceApp). Rules: \(ruleNames) | Severity: \(severities) | Matches: \(matchCount). Clipboard cleared.",
                 category: "DLP_BLOCK",
                 critical: true
             )
@@ -148,7 +164,7 @@ final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
         } else {
             sendNotification(
                 title: "NextGuard DLP - Sensitive Data Detected",
-                body: "Sensitive data detected in \(sourceApp) (audit mode).\nRules: \(ruleNames) | Severity: \(severities) | Matches: \(matchCount)",
+                body: "Sensitive data detected in \(sourceApp) (audit mode). Rules: \(ruleNames) | Severity: \(severities) | Matches: \(matchCount)",
                 category: "DLP_AUDIT",
                 critical: false
             )
