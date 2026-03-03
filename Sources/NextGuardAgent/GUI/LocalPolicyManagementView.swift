@@ -1,10 +1,10 @@
 //
-//  LocalPolicyManagementView.swift
-//  NextGuardAgent
+// LocalPolicyManagementView.swift
+// NextGuardAgent
 //
-//  Full CRUD GUI for local policy management using LocalPolicyEngine
-//  Allows admin to create, edit, toggle, delete local DLP rules
-//  Respects AgentModeManager lock state (greyed out when managed+locked)
+// Full CRUD GUI for local policy management using LocalPolicyEngine
+// Allows admin to create, edit, toggle, delete local DLP rules
+// Respects AgentModeManager lock state (greyed out when managed+locked)
 //
 
 import SwiftUI
@@ -14,14 +14,14 @@ struct LocalPolicyManagementView: View {
     @StateObject private var engine = LocalPolicyEngine.shared
     @StateObject private var modeManager = AgentModeManager.shared
     @State private var showAddSheet = false
-    @State private var editingRule: PolicyRule? = nil
+    @State private var editingRule: LocalPolicyRule? = nil
     @State private var searchText = ""
 
     private var isLocked: Bool {
         modeManager.mode == .managed && modeManager.managedSettingsLocked
     }
 
-    private var filteredRules: [PolicyRule] {
+    private var filteredRules: [LocalPolicyRule] {
         let rules = engine.localRules
         if searchText.isEmpty { return rules }
         return rules.filter { $0.name.localizedCaseInsensitiveContains(searchText) ||
@@ -33,11 +33,9 @@ struct LocalPolicyManagementView: View {
             // Header
             headerBar
             Divider()
-
             if isLocked {
                 lockedBanner
             }
-
             // Rule List
             if filteredRules.isEmpty {
                 emptyState
@@ -69,18 +67,14 @@ struct LocalPolicyManagementView: View {
         HStack(spacing: 12) {
             Image(systemName: "doc.text.fill").foregroundColor(.blue)
             Text("Local Policies").font(.title2.bold())
-
             Spacer()
-
             TextField("Search...", text: $searchText)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 180)
-
             Button(action: { showAddSheet = true }) {
                 Label("Add Rule", systemImage: "plus.circle.fill")
             }
             .disabled(isLocked)
-
             Menu {
                 Button("Install Default Policies") {
                     engine.installDefaultPolicies()
@@ -148,13 +142,12 @@ struct LocalPolicyManagementView: View {
         }
     }
 
-    private func ruleRow(_ rule: PolicyRule) -> some View {
+    private func ruleRow(_ rule: LocalPolicyRule) -> some View {
         HStack(spacing: 10) {
             // Action color dot
             Circle()
                 .fill(colorForAction(rule.action))
                 .frame(width: 8, height: 8)
-
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(rule.name).font(.body.bold())
@@ -176,16 +169,13 @@ struct LocalPolicyManagementView: View {
                 Text("\(rule.conditions.count) condition(s) \u{2022} Priority \(rule.priority)")
                     .font(.caption2).foregroundColor(.secondary)
             }
-
             Spacer()
-
             // Action badge
             Text(rule.action.rawValue)
                 .font(.caption).fontWeight(.medium)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Capsule().fill(colorForAction(rule.action).opacity(0.15)))
                 .foregroundColor(colorForAction(rule.action))
-
             // Toggle
             Toggle("", isOn: Binding(
                 get: { rule.isEnabled },
@@ -209,7 +199,7 @@ struct LocalPolicyManagementView: View {
         }
     }
 
-    private func duplicateRule(_ rule: PolicyRule) {
+    private func duplicateRule(_ rule: LocalPolicyRule) {
         engine.addLocalRule(
             name: rule.name + " (Copy)",
             description: rule.description,
@@ -223,14 +213,15 @@ struct LocalPolicyManagementView: View {
 
 // MARK: - Policy Rule Editor Sheet
 struct PolicyRuleEditorSheet: View {
-    let rule: PolicyRule?
-    let onSave: (PolicyRule) -> Void
+    let rule: LocalPolicyRule?
+    let onSave: (LocalPolicyRule) -> Void
+
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
     @State private var description: String = ""
     @State private var action: DLPAction = .audit
-    @State private var category: PolicyRule.PolicyCategory = .custom
+    @State private var category: LocalPolicyRule.PolicyCategory = .custom
     @State private var priority: Int = 50
     @State private var isEnabled: Bool = true
     @State private var conditions: [PolicyCondition] = []
@@ -273,7 +264,7 @@ struct PolicyRuleEditorSheet: View {
                         }
                         formField("Category") {
                             Picker("", selection: $category) {
-                                ForEach(PolicyRule.PolicyCategory.allCases, id: \.self) { c in
+                                ForEach(LocalPolicyRule.PolicyCategory.allCases, id: \.self) { c in
                                     Text(c.rawValue).tag(c)
                                 }
                             }.labelsHidden()
@@ -282,9 +273,7 @@ struct PolicyRuleEditorSheet: View {
                             Stepper("\(priority)", value: $priority, in: 1...100)
                         }
                     }
-
                     Toggle("Enabled", isOn: $isEnabled)
-
                     Divider()
 
                     // Conditions
@@ -297,7 +286,6 @@ struct PolicyRuleEditorSheet: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
-
                     if conditions.isEmpty {
                         Text("No conditions. Add at least one condition for this rule to match.")
                             .font(.caption).foregroundColor(.secondary)
@@ -324,13 +312,10 @@ struct PolicyRuleEditorSheet: View {
                     }
                 }
                 .frame(width: 160)
-
                 TextField("Pattern / Value", text: $conditions[index].pattern)
                     .textFieldStyle(.roundedBorder)
-
                 Toggle("Regex", isOn: $conditions[index].isRegex)
                     .toggleStyle(.checkbox)
-
                 Button(role: .destructive, action: { conditions.remove(at: index) }) {
                     Image(systemName: "trash")
                 }
@@ -363,7 +348,7 @@ struct PolicyRuleEditorSheet: View {
     }
 
     private func saveRule() {
-        let saved = PolicyRule(
+        let saved = LocalPolicyRule(
             id: rule?.id ?? UUID(),
             name: name,
             description: description,
