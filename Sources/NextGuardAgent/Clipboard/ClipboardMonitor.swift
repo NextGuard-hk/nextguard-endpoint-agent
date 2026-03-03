@@ -11,9 +11,10 @@
 import Foundation
 import AppKit
 import os.log
+import UserNotifications
 
 // MARK: - Clipboard Monitor
-final class ClipboardMonitor {
+final class ClipboardMonitor: NSObject, UNUserNotificationCenterDelegate {
     static let shared = ClipboardMonitor()
     private let logger = Logger(subsystem: "com.nextguard.agent", category: "ClipboardMonitor")
     private let engine = DLPPolicyEngine.shared
@@ -27,7 +28,47 @@ final class ClipboardMonitor {
 
     private let pollInterval: TimeInterval = 0.5
 
-    private init() {}
+    private override init() {
+        super.init()
+        setupNotifications()
+    }
+
+    // MARK: - Notification Setup
+    private func setupNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+
+        // Request notification permission
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if granted {
+                print("[OK] Notification permission granted")
+            } else {
+                print("[WARN] Notification permission denied: \(error?.localizedDescription ?? "unknown")")
+            }
+        }
+
+        // Register custom categories for actionable notifications
+        let blockCategory = UNNotificationCategory(
+            identifier: "DLP_BLOCK",
+            actions: [],
+            intentIdentifiers: [],
+            options: .customDismissAction
+        )
+        let auditCategory = UNNotificationCategory(
+            identifier: "DLP_AUDIT",
+            actions: [],
+            intentIdentifiers: [],
+            options: .customDismissAction
+        )
+        center.setNotificationCategories([blockCategory, auditCategory])
+    }
+
+    // UNUserNotificationCenterDelegate - show notification even when app is in foreground
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .badge])
+    }
 
     // MARK: - Start / Stop
     func startMonitoring() {
@@ -85,9 +126,18 @@ final class ClipboardMonitor {
         if action == .block || action == .quarantine {
             clearClipboard()
             totalBlocked += 1
-            showBlockNotification(ruleNames: ruleNames, sourceApp: sourceApp)
+            showDLPNotification(
+                title: "NextGuard DLP - Content BLOCKED",
+                body: "Sensitive data detected and blocked in \(sourceApp).\nRules: \(ruleNames) | Severity: \(severities) | Matches: \(matchCount)",
+                isBlock: true
+            )
             print("  Result: CLIPBOARD CLEARED - content blocked")
         } else {
+            showDLPNotification(
+                title: "NextGuard DLP - Sensitive Data Detected",
+                body: "Sensitive data detected in \(sourceApp) (audit mode).\nRules: \(ruleNames) | Severity: \(severities) | Matches: \(matchCount)",
+                isBlock: false
+            )
             print("  Result: Logged (audit mode)")
         }
         print("================================================")
@@ -119,13 +169,22 @@ final class ClipboardMonitor {
         }
     }
 
-    private func showBlockNotification(ruleNames: String, sourceApp: String) {
-        DispatchQueue.main.async {
-            let notification = NSUserNotification()
-            notification.title = "NextGuard DLP - Content Blocked"
-            notification.informativeText = "Sensitive data detected in \(sourceApp): \(ruleNames)"
-            notification.soundName = NSUserNotificationDefaultSoundName
-            NSUserNotificationCenter.default.deliver(notification)
+    // MARK: - Modern Notification (UNUserNotificationCenter)
+    private func showDLPNotification(title: String, body: String, isBlock: Bool) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = UNNotificationSound.default
+        content.categoryIdentifier = isBlock ? "DLP_BLOCK" : "DLP_AUDIT"
+
+        // Use unique ID so notifications don't replace each other
+        let requestId = "dlp-\(UUID().uuidString)"
+        let request = UNNotificationRequest(identifier: requestId, content: content, trigger: nil)
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("[WARN] Notification failed: \(error.localizedDescription)")
+            }
         }
     }
 }
