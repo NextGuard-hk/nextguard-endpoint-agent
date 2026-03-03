@@ -338,10 +338,4 @@ struct EnrollmentView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
     }
-}
-
-// MARK: - Enrollment Manager (singleton stub for GUI)
-// Full implementation is in Management/EnrollmentManager.swift
-extension EnrollmentManager {
-    static let shared = EnrollmentManager()
-}
+    }
