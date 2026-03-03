@@ -2,9 +2,9 @@
 //  MainWindowController.swift
 //  NextGuardAgent
 //
-//  Main application window controller with sidebar navigation
-//  Inspired by Forcepoint DLP, Palo Alto Cortex XDR, McAfee DLP, Zscaler Agent UIs
-//  NOTE: AgentStatusInfo is defined in PolicyStore.swift
+//  Main application window + sidebar navigation
+//  NOTE: Uses PolicyStore.shared (defined in PolicyStore.swift)
+//  AgentStatusInfo, RuleAction, GUIPolicyRule defined in PolicyStore.swift
 //
 
 import Cocoa
@@ -18,9 +18,7 @@ enum NavigationTab: String, CaseIterable, Identifiable {
   case policies = "Policies"
   case incidents = "Incidents"
   case settings = "Settings"
-
   var id: String { rawValue }
-
   var icon: String {
     switch self {
     case .dashboard: return "shield.checkmark.fill"
@@ -35,17 +33,16 @@ enum NavigationTab: String, CaseIterable, Identifiable {
 
 final class MainWindowController: NSWindowController, ObservableObject {
   @Published var selectedTab: NavigationTab = .dashboard
-  private var cancellables = Set<AnyCancellable>()
 
   convenience init() {
+    // Inject PolicyStore.shared as environment object
     let contentView = MainContentView()
+      .environmentObject(PolicyStore.shared)
     let hostingController = NSHostingController(rootView: contentView)
-
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
       styleMask: [.titled, .closable, .miniaturizable, .resizable],
-      backing: .buffered,
-      defer: false
+      backing: .buffered, defer: false
     )
     window.title = "NextGuard DLP Agent"
     window.center()
@@ -56,20 +53,16 @@ final class MainWindowController: NSWindowController, ObservableObject {
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
     window.toolbarStyle = .unified
-
     self.init(window: window)
   }
 
   func navigateTo(tab: NavigationTab) {
     selectedTab = tab
-    NotificationCenter.default.post(
-      name: .init("NextGuardNavigateTab"),
-      object: tab.rawValue
-    )
+    NotificationCenter.default.post(name: .init("NextGuardNavigateTab"), object: tab.rawValue)
   }
 }
 
-// MARK: - Main Content View (SwiftUI)
+// MARK: - Main Content View
 
 struct MainContentView: View {
   @State private var selectedTab: NavigationTab = .dashboard
@@ -90,37 +83,28 @@ struct MainContentView: View {
     }
   }
 
-  // MARK: - Sidebar
-
   private var sidebarView: some View {
     VStack(spacing: 0) {
       VStack(spacing: 8) {
         Image(systemName: "shield.checkmark.fill")
-          .font(.system(size: 32))
-          .foregroundColor(.accentColor)
-        Text("NextGuard DLP")
-          .font(.headline)
+          .font(.system(size: 32)).foregroundColor(.accentColor)
+        Text("NextGuard DLP").font(.headline)
         Text(policyStore.agentStatus.isConnectedToConsole ? "Connected" : "Offline")
           .font(.caption)
           .foregroundColor(policyStore.agentStatus.isConnectedToConsole ? .green : .orange)
           .padding(.horizontal, 8).padding(.vertical, 2)
           .background(Capsule().fill(
             policyStore.agentStatus.isConnectedToConsole
-              ? Color.green.opacity(0.15)
-              : Color.orange.opacity(0.15)
+              ? Color.green.opacity(0.15) : Color.orange.opacity(0.15)
           ))
       }
       .padding(.vertical, 16)
-
       Divider()
-
       List(NavigationTab.allCases, selection: $selectedTab) { tab in
         Label(tab.rawValue, systemImage: tab.icon).tag(tab)
       }
       .listStyle(.sidebar)
-
       Spacer()
-
       VStack(spacing: 4) {
         Divider()
         Text("v\(policyStore.agentStatus.agentVersion)")
@@ -134,19 +118,13 @@ struct MainContentView: View {
     .frame(minWidth: 180, idealWidth: 200, maxWidth: 220)
   }
 
-  // MARK: - Detail
-
   @ViewBuilder
   private var detailView: some View {
     switch selectedTab {
-    case .dashboard:
-      DashboardTabView()
-    case .policies:
-      PoliciesTabView()
-    case .incidents:
-      IncidentsTabView(store: incidentLog)
-    case .settings:
-      AgentSettingsContentView()
+    case .dashboard: DashboardTabView()
+    case .policies: PoliciesTabView()
+    case .incidents: IncidentsTabView(store: incidentLog)
+    case .settings: AgentSettingsContentView()
     }
   }
 }
@@ -160,7 +138,7 @@ struct DashboardTabView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 20) {
-        // Status card
+        // Protection Status Card
         HStack(spacing: 20) {
           ZStack {
             Circle()
@@ -176,7 +154,6 @@ struct DashboardTabView: View {
               animateShield = true
             }
           }
-
           VStack(alignment: .leading, spacing: 6) {
             Text(policyStore.agentStatus.isProtected ? "Protection Active" : "Protection Paused")
               .font(.title2.bold())
@@ -200,12 +177,20 @@ struct DashboardTabView: View {
           policyStore.agentStatus.isProtected ? Color.green.opacity(0.3) : Color.red.opacity(0.3), lineWidth: 1
         ))
 
-        // Stats grid
+        // Stats Grid
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 16) {
-          DashStatCard(title: "Active Policies", value: "\(policyStore.policies.filter { $0.enabled }.count)", icon: "doc.text.fill", color: .blue)
-          DashStatCard(title: "Today Incidents", value: "\(policyStore.agentStatus.totalIncidentsToday)", icon: "exclamationmark.triangle.fill", color: .orange)
-          DashStatCard(title: "Blocked", value: "\(policyStore.agentStatus.blockedToday)", icon: "xmark.shield.fill", color: .red)
-          DashStatCard(title: "Audited", value: "\(policyStore.agentStatus.auditedToday)", icon: "eye.fill", color: .purple)
+          DashStatCard(title: "Active Policies",
+            value: "\(policyStore.policies.filter { $0.enabled }.count)",
+            icon: "doc.text.fill", color: .blue)
+          DashStatCard(title: "Today Incidents",
+            value: "\(policyStore.agentStatus.totalIncidentsToday)",
+            icon: "exclamationmark.triangle.fill", color: .orange)
+          DashStatCard(title: "Blocked",
+            value: "\(policyStore.agentStatus.blockedToday)",
+            icon: "xmark.shield.fill", color: .red)
+          DashStatCard(title: "Audited",
+            value: "\(policyStore.agentStatus.auditedToday)",
+            icon: "eye.fill", color: .purple)
         }
       }
       .padding(24)
@@ -232,7 +217,6 @@ struct DashStatCard: View {
 
 struct PoliciesTabView: View {
   @EnvironmentObject var policyStore: PolicyStore
-  @State private var showAdd = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -240,9 +224,6 @@ struct PoliciesTabView: View {
         Image(systemName: "doc.text.fill").foregroundColor(.blue)
         Text("DLP Policies").font(.title2.bold())
         Spacer()
-        Button(action: { showAdd = true }) {
-          Label("Add Local Policy", systemImage: "plus")
-        }
       }
       .padding(16)
       Divider()
@@ -257,8 +238,7 @@ struct PoliciesTabView: View {
           }
           Spacer()
           Text(policy.action.displayName)
-            .font(.caption)
-            .padding(.horizontal, 8).padding(.vertical, 3)
+            .font(.caption).padding(.horizontal, 8).padding(.vertical, 3)
             .background(Capsule().fill(
               policy.action == .block ? Color.red.opacity(0.15) :
               policy.action == .audit ? Color.orange.opacity(0.15) : Color.green.opacity(0.15)
@@ -280,7 +260,6 @@ struct PoliciesTabView: View {
 
 class IncidentLogStore: ObservableObject {
   @Published var incidents: [LocalIncident] = []
-
   struct LocalIncident: Identifiable {
     let id = UUID()
     var timestamp: Date
@@ -312,8 +291,7 @@ struct IncidentsTabView: View {
         VStack(spacing: 12) {
           Image(systemName: "checkmark.shield").font(.system(size: 48)).foregroundColor(.green)
           Text("No Incidents").font(.title3.bold())
-          Text("No DLP violations detected on this endpoint.")
-            .foregroundColor(.secondary)
+          Text("No DLP violations detected on this endpoint.").foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
