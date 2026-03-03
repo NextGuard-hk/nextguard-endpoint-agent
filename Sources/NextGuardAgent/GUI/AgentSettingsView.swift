@@ -1,10 +1,10 @@
 //
-//  AgentSettingsView.swift
-//  NextGuardAgent
+// AgentSettingsView.swift
+// NextGuardAgent
 //
-//  Agent settings panel - Console connection with AgentModeManager awareness
-//  When in managed+locked mode, fields are disabled
-//  Design inspired by Zscaler Client Connector & Forcepoint DLP Agent
+// Agent settings panel - Console connection with AgentModeManager awareness
+// When in managed+locked mode, fields are disabled
+// Design inspired by Zscaler Client Connector & Forcepoint DLP Agent
 //
 
 import SwiftUI
@@ -18,7 +18,7 @@ struct AgentSettingsView: View {
     @State private var showSaved = false
 
     private var isLocked: Bool {
-        modeManager.mode == .managed && modeManager.managedSettingsLocked
+        modeManager.mode == AgentMode.managed && modeManager.managedSettingsLocked
     }
 
     var body: some View {
@@ -91,16 +91,17 @@ struct AgentSettingsView: View {
                     }
 
                     // Agent mode indicator
+                    let isManaged = modeManager.mode == AgentMode.managed
                     HStack(spacing: 4) {
-                        Image(systemName: modeManager.mode == .managed ? "building.2.fill" : "laptopcomputer")
+                        Image(systemName: isManaged ? "building.2.fill" : "laptopcomputer")
                             .font(.system(size: 9))
-                        Text(modeManager.mode == .managed ? "Managed" : "Standalone")
+                        Text(isManaged ? "Managed" : "Standalone")
                             .font(.system(size: 9))
                     }
-                    .foregroundColor(modeManager.mode == .managed ? .blue : .green)
+                    .foregroundColor(isManaged ? .blue : .green)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill(
-                        modeManager.mode == .managed ? Color.blue.opacity(0.1) : Color.green.opacity(0.1)
+                        isManaged ? Color.blue.opacity(0.1) : Color.green.opacity(0.1)
                     ))
 
                     Spacer()
