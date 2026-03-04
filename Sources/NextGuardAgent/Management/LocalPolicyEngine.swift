@@ -319,4 +319,43 @@ final class LocalPolicyEngine: ObservableObject {
             object: entry
         )
     }
+
+    // MARK: - Monitor Integration Convenience API
+    // Used by BrowserMonitor, FileSystemWatcher, ClipboardMonitor, EmailMonitor
+
+    struct MonitorEvalResult {
+        let action: LocalDLPAction
+        let matchedRules: [String]
+        let policySource: String
+    }
+
+    func evaluate(content: String, channel: DLPChannel, metadata: [String: String]) -> MonitorEvalResult {
+        let filePath = metadata["filePath"] ?? metadata["fileName"]
+        let destination = metadata["url"] ?? metadata["domain"] ?? metadata["destination"]
+        let app = metadata["application"] ?? metadata["browser"]
+
+        if let match = evaluate(content: content, filePath: filePath, destination: destination, app: app) {
+            return MonitorEvalResult(
+                action: match.action,
+                matchedRules: [match.matchedRule.id.uuidString],
+                policySource: "local"
+            )
+        }
+        return MonitorEvalResult(action: .allow, matchedRules: [], policySource: "none")
+    }
+
+    func reportIncident(ruleIds: [String], channel: DLPChannel, content: String, action: LocalDLPAction, metadata: [String: String]) {
+        let entry: [String: Any] = [
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "channel": channel.rawValue,
+            "action": action.rawValue,
+            "ruleIds": ruleIds,
+            "contentSnippet": String(content.prefix(200)),
+            "metadata": metadata
+        ]
+        NotificationCenter.default.post(
+            name: .init("NextGuardLocalPolicyIncident"),
+            object: entry
+        )
+    }
 }
