@@ -209,7 +209,7 @@ final class FileSystemWatcher: ObservableObject {
             policySource = "server"
         }
 
-        if localResult.action != .allow {
+        if localResult.action != LocalDLPAction.allow {
             allRuleIds.append(contentsOf: localResult.matchedRules)
             if localResult.action.rawValue > finalAction.rawValue || finalAction == .allow {
                 finalAction = localResult.action
@@ -243,7 +243,7 @@ final class FileSystemWatcher: ObservableObject {
         AgentAPIClient.shared.reportFileEvent(event)
 
         // Report local policy incidents
-        if localResult.action != .allow {
+        if localResult.action != LocalDLPAction.allow {
             localEngine.reportIncident(
                 ruleIds: localResult.matchedRules,
                 channel: .fileTransfer,
