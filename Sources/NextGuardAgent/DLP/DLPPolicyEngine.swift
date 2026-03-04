@@ -1,11 +1,10 @@
+// DLPPolicyEngine.swift
+// NextGuard Endpoint DLP Agent
 //
-//  DLPPolicyEngine.swift
-//  NextGuard Endpoint DLP Agent
+// Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 //
-//  Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
-//
-//  Hybrid DLP engine: Pattern-based (Regex/Dictionary) + AI-powered analysis
-//  Ref: ISO 27001:2022 A.8.12, NIST SP 800-171, Gartner 2025 DLP Market Guide
+// Hybrid DLP engine: Pattern-based (Regex/Dictionary) + AI-powered analysis
+// Ref: ISO 27001:2022 A.8.12, NIST SP 800-171, Gartner 2025 DLP Market Guide
 //
 
 import Foundation
@@ -15,17 +14,15 @@ import NaturalLanguage
 // MARK: - DLP Rule Severity & Action (ISO 27001 A.8.12 classifications)
 public enum DLPSeverity: String, Codable, CaseIterable, Comparable {
     case critical, high, medium, low, info
-
     private var sortOrder: Int {
         switch self {
         case .critical: return 4
-        case .high: return 3
-        case .medium: return 2
-        case .low: return 1
-        case .info: return 0
+        case .high:     return 3
+        case .medium:   return 2
+        case .low:      return 1
+        case .info:     return 0
         }
     }
-
     public static func < (lhs: DLPSeverity, rhs: DLPSeverity) -> Bool {
         return lhs.sortOrder < rhs.sortOrder
     }
@@ -36,7 +33,7 @@ public enum DLPAction: String, Codable, CaseIterable {
 }
 
 public enum DLPChannel: String, Codable {
-    case file, clipboard, network, usb, print, screenshot, email, cloud, airdrop
+    case file, clipboard, network, usb, print, screenshot, email, cloud, airdrop, fileTransfer, webUpload
 }
 
 // MARK: - DLP Rule Definition
@@ -85,14 +82,58 @@ final class DLPPolicyEngine {
 
     // Built-in fallback rules (used when console is unreachable)
     private let builtInRules: [DLPRule] = [
-        DLPRule(id: "cc-detect", name: "Credit Card Number", description: "Visa/MC/Amex credit card patterns", patterns: ["\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\\b"], keywords: [], severity: .critical, action: .block, channels: [.file, .clipboard, .network, .email, .usb, .cloud, .print], enabled: true, complianceFramework: "PCI-DSS"),
-        DLPRule(id: "hkid-detect", name: "Hong Kong ID", description: "HKID number pattern", patterns: ["\\b[A-Z]{1,2}[0-9]{6}\\(?[0-9A]\\)?\\b"], keywords: [], severity: .critical, action: .block, channels: [.file, .clipboard, .network, .email, .usb, .cloud, .print], enabled: true, complianceFramework: "PDPO"),
-        DLPRule(id: "email-detect", name: "Email Address", description: "Email address pattern", patterns: ["\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"], keywords: [], severity: .low, action: .audit, channels: [.file, .clipboard, .network, .email], enabled: true, complianceFramework: "GDPR"),
-        DLPRule(id: "phone-hk", name: "HK Phone Number", description: "Hong Kong phone number", patterns: ["\\b(?:\\+?852[\\s-]?)?[2-9][0-9]{3}[\\s-]?[0-9]{4}\\b"], keywords: [], severity: .medium, action: .audit, channels: [.file, .clipboard, .network, .email], enabled: true, complianceFramework: "PDPO"),
-        DLPRule(id: "sensitive-keywords", name: "Sensitive Keywords", description: "Classification labels and sensitive terms", patterns: [], keywords: ["confidential", "secret", "classified", "internal only", "do not distribute", "password", "restricted"], severity: .high, action: .quarantine, channels: [.file, .clipboard, .network, .email, .usb, .cloud, .print], enabled: true, complianceFramework: "ISO27001"),
-        DLPRule(id: "api-key-detect", name: "API Keys & Secrets", description: "AWS keys, tokens, passwords in code", patterns: ["(?i)(?:api[_-]?key|secret[_-]?key|access[_-]?key|auth[_-]?token)\\s*[:=]\\s*['\"][A-Za-z0-9+/=_-]{16,}['\"]", "\\bAKIA[0-9A-Z]{16}\\b"], keywords: [], severity: .critical, action: .block, channels: [.file, .clipboard, .network, .email, .cloud], enabled: true, complianceFramework: "NIST-800-171"),
-        DLPRule(id: "iban-detect", name: "IBAN / Bank Account", description: "International bank account numbers", patterns: ["\\b[A-Z]{2}[0-9]{2}\\s?[A-Z0-9]{4}\\s?[0-9]{4}\\s?[0-9]{4}\\s?[0-9]{4}\\s?[0-9]{0,4}\\b"], keywords: [], severity: .high, action: .block, channels: [.file, .clipboard, .network, .email, .usb], enabled: true, complianceFramework: "GDPR"),
-        DLPRule(id: "passport-detect", name: "Passport Number", description: "Common passport number formats", patterns: ["\\b[A-Z][0-9]{8}\\b", "\\b[A-Z]{2}[0-9]{7}\\b"], keywords: ["passport", "travel document"], severity: .high, action: .quarantine, channels: [.file, .clipboard, .network, .email], enabled: true, complianceFramework: "GDPR")
+        DLPRule(id: "cc-detect", name: "Credit Card Number",
+                description: "Visa/MC/Amex credit card patterns",
+                patterns: ["\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\\b"],
+                keywords: [], severity: .critical, action: .block,
+                channels: [.file, .clipboard, .network, .email, .usb, .cloud, .print],
+                enabled: true, complianceFramework: "PCI-DSS"),
+        DLPRule(id: "hkid-detect", name: "Hong Kong ID",
+                description: "HKID number pattern",
+                patterns: ["\\b[A-Z]{1,2}[0-9]{6}\\(?[0-9A]\\)?\\b"],
+                keywords: [], severity: .critical, action: .block,
+                channels: [.file, .clipboard, .network, .email, .usb, .cloud, .print],
+                enabled: true, complianceFramework: "PDPO"),
+        DLPRule(id: "email-detect", name: "Email Address",
+                description: "Email address pattern",
+                patterns: ["\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"],
+                keywords: [], severity: .low, action: .audit,
+                channels: [.file, .clipboard, .network, .email],
+                enabled: true, complianceFramework: "GDPR"),
+        DLPRule(id: "phone-hk", name: "HK Phone Number",
+                description: "Hong Kong phone number",
+                patterns: ["\\b(?:\\+?852[\\s-]?)?[2-9][0-9]{3}[\\s-]?[0-9]{4}\\b"],
+                keywords: [], severity: .medium, action: .audit,
+                channels: [.file, .clipboard, .network, .email],
+                enabled: true, complianceFramework: "PDPO"),
+        DLPRule(id: "sensitive-keywords", name: "Sensitive Keywords",
+                description: "Classification labels and sensitive terms",
+                patterns: [],
+                keywords: ["confidential", "secret", "classified", "internal only",
+                           "do not distribute", "password", "restricted"],
+                severity: .high, action: .quarantine,
+                channels: [.file, .clipboard, .network, .email, .usb, .cloud, .print],
+                enabled: true, complianceFramework: "ISO27001"),
+        DLPRule(id: "api-key-detect", name: "API Keys & Secrets",
+                description: "AWS keys, tokens, passwords in code",
+                patterns: ["(?i)(?:api[_-]?key|secret[_-]?key|access[_-]?key|auth[_-]?token)\\s*[:=]\\s*['\"'][A-Za-z0-9+/=_-]{16,}['\"']",
+                           "\\bAKIA[0-9A-Z]{16}\\b"],
+                keywords: [], severity: .critical, action: .block,
+                channels: [.file, .clipboard, .network, .email, .cloud],
+                enabled: true, complianceFramework: "NIST-800-171"),
+        DLPRule(id: "iban-detect", name: "IBAN / Bank Account",
+                description: "International bank account numbers",
+                patterns: ["\\b[A-Z]{2}[0-9]{2}\\s?[A-Z0-9]{4}\\s?[0-9]{4}\\s?[0-9]{4}\\s?[0-9]{4}\\s?[0-9]{0,4}\\b"],
+                keywords: [], severity: .high, action: .block,
+                channels: [.file, .clipboard, .network, .email, .usb],
+                enabled: true, complianceFramework: "GDPR"),
+        DLPRule(id: "passport-detect", name: "Passport Number",
+                description: "Common passport number formats",
+                patterns: ["\\b[A-Z][0-9]{8}\\b", "\\b[A-Z]{2}[0-9]{7}\\b"],
+                keywords: ["passport", "travel document"],
+                severity: .high, action: .quarantine,
+                channels: [.file, .clipboard, .network, .email],
+                enabled: true, complianceFramework: "GDPR")
     ]
 
     private init() {}
@@ -103,7 +144,8 @@ final class DLPPolicyEngine {
         for dict in remotePolicies {
             guard let id = dict["id"] as? String,
                   let name = dict["name"] as? String,
-                  let enabled = dict["enabled"] as? Bool, enabled else { continue }
+                  let enabled = dict["enabled"] as? Bool,
+                  enabled else { continue }
             let description = dict["description"] as? String ?? ""
             let patterns = dict["patterns"] as? [String] ?? []
             let keywords = dict["keywords"] as? [String] ?? []
@@ -114,7 +156,11 @@ final class DLPPolicyEngine {
             let severity = DLPSeverity(rawValue: severityStr) ?? .medium
             let action = DLPAction(rawValue: actionStr) ?? .audit
             let channels = channelStrs.compactMap { DLPChannel(rawValue: $0) }
-            parsed.append(DLPRule(id: id, name: name, description: description, patterns: patterns, keywords: keywords, severity: severity, action: action, channels: channels, enabled: true, complianceFramework: framework))
+            parsed.append(DLPRule(id: id, name: name, description: description,
+                                  patterns: patterns, keywords: keywords,
+                                  severity: severity, action: action,
+                                  channels: channels, enabled: true,
+                                  complianceFramework: framework))
         }
         if !parsed.isEmpty {
             activePolicies = parsed
@@ -137,9 +183,7 @@ final class DLPPolicyEngine {
     func startPolicyRefresh(interval: TimeInterval = 300) {
         policyRefreshTimer?.invalidate()
         policyRefreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task {
-                await self?.refreshPoliciesFromConsole()
-            }
+            Task { await self?.refreshPoliciesFromConsole() }
         }
         logger.info("Policy refresh started (every \(Int(interval))s)")
     }
@@ -194,7 +238,10 @@ final class DLPPolicyEngine {
                     }
                 }
                 if !matches.isEmpty {
-                    results.append(DLPScanResult(ruleId: rule.id, ruleName: rule.name, matches: matches, severity: rule.severity, action: rule.action, channel: channel, timestamp: Date(), filePath: filePath, processName: processName))
+                    results.append(DLPScanResult(ruleId: rule.id, ruleName: rule.name, matches: matches,
+                                                 severity: rule.severity, action: rule.action,
+                                                 channel: channel, timestamp: Date(),
+                                                 filePath: filePath, processName: processName))
                 }
             }
         }
