@@ -53,9 +53,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupMenu()
 
-        // Start real-time monitoring
+        // Start real-time monitoring - ALL DLP channels
         ClipboardMonitor.shared.startMonitoring()
         print("[OK] Clipboard monitoring started")
+
+        FileSystemWatcher.shared.startWatching()
+        print("[OK] File system monitoring started")
+
+        USBDeviceMonitor.shared.startMonitoring()
+        print("[OK] USB monitoring started")
+
+        PrintMonitor.shared.startMonitoring()
+        print("[OK] Print monitoring started")
+
+        AirDropMonitor.shared.startMonitoring()
+        print("[OK] AirDrop monitoring started")
+
+        ScreenCaptureMonitor.shared.startMonitoring()
+        print("[OK] Screen capture monitoring started")
+
+        NetworkMonitor.shared.startMonitoring()
+        print("[OK] Network monitoring started")
 
         // Async initialization
         Task {
@@ -121,12 +139,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         print("[OK] NextGuard DLP Agent shutting down")
         ClipboardMonitor.shared.stopMonitoring()
+        FileSystemWatcher.shared.stopWatching()
+        USBDeviceMonitor.shared.stopMonitoring()
+        PrintMonitor.shared.stopMonitoring()
+        AirDropMonitor.shared.stopMonitoring()
+        ScreenCaptureMonitor.shared.stopMonitoring()
+        NetworkMonitor.shared.stopMonitoring()
         mgmtClient.stopHeartbeat()
         policyEngine.stopPolicyRefresh()
     }
 
-    // MARK: - Status Item Setup
-
+        // MARK: - Status Item Setup
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -155,6 +178,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         policiesMenuItem = NSMenuItem(title: "Policies: Loading...", action: nil, keyEquivalent: "")
         policiesMenuItem.isEnabled = false
         menu.addItem(policiesMenuItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let dashboardItem = NSMenuItem(title: "Open Dashboard", action: #selector(showDashboard), keyEquivalent: "d")
@@ -164,6 +188,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let scanItem = NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c")
         scanItem.target = self
         menu.addItem(scanItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
@@ -205,31 +230,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - MainActor Helpers
+    @MainActor private func updateConnectionStatus(_ text: String) {
+        connectionMenuItem?.title = text
+    }
 
-    @MainActor private func updateConnectionStatus(_ text: String) { connectionMenuItem?.title = text }
-    @MainActor private func updateStatusMenuItem(_ text: String) { statusMenuItem?.title = text }
-    @MainActor private func updatePoliciesStatus(_ text: String) { policiesMenuItem?.title = text }
+    @MainActor private func updateStatusMenuItem(_ text: String) {
+        statusMenuItem?.title = text
+    }
+
+    @MainActor private func updatePoliciesStatus(_ text: String) {
+        policiesMenuItem?.title = text
+    }
+
     @MainActor private func updateStatusIcon(protected: Bool, alert: Bool = false) {
         if let button = statusItem.button {
             StatusBarIconHelper.update(button: button, protected: protected, alert: alert)
         }
     }
+
     @MainActor private func startScanningAnimation() {
         if let button = statusItem.button {
             scanningTimer = StatusBarIconHelper.startScanningAnimation(button: button)
         }
     }
+
     @MainActor private func stopScanningAnimation() {
         scanningTimer?.invalidate()
         scanningTimer = nil
     }
 
     // MARK: - Actions
-
     @objc func showDashboard() {
-        // Open full window GUI
         menuBarController?.openMainWindow()
-        // Also toggle popover for quick view
         if let button = statusItem.button {
             GUIManager.shared.openPopover(relativeTo: button)
         }
@@ -242,7 +274,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Check both engines: server policy engine and local policy engine
         let results = policyEngine.scanContent(content, channel: .clipboard)
         let localMatch = localPolicyEngine.evaluate(
             content: content,
@@ -264,8 +295,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let alert = NSAlert()
             alert.messageText = "Sensitive Data Detected!"
             var info = ""
-            if totalMatches > 0 { info += "Server policies: \(totalMatches) matches. " }
-            if hasLocalMatch { info += "Local policy matched: \(localMatch!.matchedRule.name) → \(localMatch!.action.rawValue)" }
+            if totalMatches > 0 {
+                info += "Server policies: \(totalMatches) matches. "
+            }
+            if hasLocalMatch {
+                info += "Local policy matched: \(localMatch!.matchedRule.name) -> \(localMatch!.action.rawValue)"
+            }
             alert.informativeText = info
             alert.alertStyle = .critical
             alert.runModal()
