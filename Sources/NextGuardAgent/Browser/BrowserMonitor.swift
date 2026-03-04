@@ -198,9 +198,9 @@ final class BrowserMonitor: @unchecked Sendable {
             ]
         )
 
-        if localResult.action != .allow {
+        if localResult.action != LocalDLPAction.allow {
             if finalAction == .allow {
-                finalAction = localResult.action == .block ? .block : .warn
+                finalAction = localResult.action == LocalDLPAction.block ? .block : .warn
                 policySource = "local"
             } else {
                 policySource = "both"
@@ -267,7 +267,7 @@ final class BrowserMonitor: @unchecked Sendable {
             ]
         )
 
-        if localResult.action == .block {
+        if localResult.action == LocalDLPAction.block {
             finalAction = .block
         }
 
@@ -277,7 +277,7 @@ final class BrowserMonitor: @unchecked Sendable {
                 severity: finalAction == .block ? .critical : .high,
                 action: "download_inspection",
                 description: "Download \(finalAction.rawValue): \(fileName) from \(domain)",
-                metadata: ["url": url, "extension": ext, "policySource": localResult.action != .allow ? "local" : "builtin"],
+                metadata: ["url": url, "extension": ext, "policySource": localResult.action != LocalDLPAction.allow ? "local" : "builtin"],
                 filePath: fileName
             )
         }
