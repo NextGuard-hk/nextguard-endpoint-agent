@@ -141,7 +141,7 @@ final class FileSystemWatcher: ObservableObject {
 
         for i in 0..<numEvents {
             let path = paths[i]
-            let flags = eventFlags![i]
+            let flags = eventFlags[i]
             watcher.scanQueue.async {
                 watcher.handleFileEvent(path: path, flags: flags)
             }
@@ -212,7 +212,7 @@ final class FileSystemWatcher: ObservableObject {
         if localResult.action != LocalDLPAction.allow {
             allRuleIds.append(contentsOf: localResult.matchedRules)
             if localResult.action.rawValue > finalAction.rawValue || finalAction == .allow {
-                finalAction = localResult.action
+                finalAction = DLPAction(rawValue: localResult.action.rawValue) ?? finalAction
                 policySource = policySource == "server" ? "both" : "local"
             } else if policySource == "server" {
                 policySource = "both"
