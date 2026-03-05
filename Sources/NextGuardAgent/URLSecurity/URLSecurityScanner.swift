@@ -603,4 +603,117 @@ final class URLSecurityScanner: ObservableObject {
         blockedCount = 0
         saveScanHistory()
     }
+    
+    // MARK: - Threat Intelligence Integration
+
+    /// Async scan that combines local heuristics + external Threat Intelligence
+    func scanURLWithThreatIntelligence(_ urlString: String) async -> URLScanResult {
+        // First run local heuristic scan
+        let localResult = scanURL(urlString)
+
+        // Query external Threat Intelligence
+        let tiService = ThreatIntelligenceService.shared
+        let tiResult = await tiService.checkURL(urlString)
+
+        // Combine scores: local heuristic + TI weighted average
+        let combinedScore = combineScores(
+            localScore: localResult.riskScore,
+            tiScore: tiResult.combinedRiskScore,
+            tiConfidence: tiResult.confidence
+        )
+
+        // Merge threat categories
+        var mergedCategories = localResult.categories
+        for tiCategory in tiResult.threatCategories {
+            let mapped = mapTICategory(tiCategory)
+            if !mergedCategories.contains(mapped) {
+                mergedCategories.append(mapped)
+            }
+        }
+
+        // Build merged details
+        var mergedDetails = localResult.details
+        if tiResult.positiveCount > 0 {
+            mergedDetails.append("Threat Intelligence: \(tiResult.positiveCount)/\(tiResult.totalEngines) engines flagged this URL")
+        }
+        if !tiResult.summary.isEmpty {
+            mergedDetails.append("TI Summary: \(tiResult.summary)")
+        }
+        for provider in tiResult.providerResults where provider.isMalicious {
+            mergedDetails.append("[\(provider.providerName)] \(provider.threatCategory ?? "Malicious")")
+        }
+
+        // Determine final threat level
+        let finalThreatLevel: URLThreatLevel
+        if combinedScore >= 70 || tiResult.isDefinitelyMalicious {
+            finalThreatLevel = .dangerous
+        } else if combinedScore >= 40 || tiResult.isSuspicious {
+            finalThreatLevel = .suspicious
+        } else {
+            finalThreatLevel = .safe
+        }
+
+        // Build final result
+        let finalResult = URLScanResult(
+            url: localResult.url,
+            domain: localResult.domain,
+            threatLevel: finalThreatLevel,
+            categories: mergedCategories.isEmpty ? [.clean] : mergedCategories,
+            riskScore: combinedScore,
+            details: mergedDetails.isEmpty ? ["No threats detected"] : mergedDetails,
+            sslValid: localResult.sslValid
+        )
+
+        // Update stats if threat level changed
+        if finalThreatLevel == .dangerous && localResult.threatLevel != .dangerous {
+            DispatchQueue.main.async {
+                self.threatsDetected += 1
+            }
+        }
+
+        logger.info("[URLSecurity+TI] \(localResult.domain): \(finalThreatLevel.rawValue) (combined: \(combinedScore), TI: \(tiResult.combinedRiskScore))")
+        return finalResult
+    }
+
+    /// Combine local heuristic score and TI score with confidence weighting
+    private func combineScores(localScore: Int, tiScore: Int, tiConfidence: Double) -> Int {
+        // Weight: TI confidence scales TI contribution (0.0-1.0)
+        // localWeight = 1.0 - (tiConfidence * 0.6)  so local always has at least 40% weight
+        let localWeight = 1.0 - (tiConfidence * 0.6)
+        let tiWeight = tiConfidence * 0.6
+        let combined = (Double(localScore) * localWeight) + (Double(tiScore) * tiWeight)
+        return min(100, Int(combined.rounded()))
+    }
+
+    /// Map ThreatIntelligenceService threat category to URLThreatCategory
+    private func mapTICategory(_ tiCategory: String) -> URLThreatCategory {
+        switch tiCategory.lowercased() {
+        case "phishing": return .phishing
+        case "malware", "malware distribution": return .malware
+        case "scam", "fraud": return .scam
+        case "cryptojacking": return .cryptojacking
+        case "typosquatting": return .typosquatting
+        case "ssl stripping": return .sslStripping
+        case "data harvesting": return .dataHarvesting
+        case "redirect", "suspicious redirect": return .redirectChain
+        default: return .phishing
+        }
+    }
+
+    /// Scan clipboard URLs using Threat Intelligence (async)
+    func scanClipboardWithThreatIntelligence() async {
+        guard isRealTimeEnabled else { return }
+        let pasteboard = NSPasteboard.general
+        guard let content = pasteboard.string(forType: .string) else { return }
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let matches = detector?.matches(in: content, range: NSRange(content.startIndex..., in: content)) ?? []
+        for match in matches {
+            if let url = match.url {
+                let result = await scanURLWithThreatIntelligence(url.absoluteString)
+                if result.threatLevel == .dangerous || result.threatLevel == .blocked {
+                    logger.warning("[URLSecurity+TI] Dangerous URL in clipboard: \(url.absoluteString)")
+                }
+            }
+        }
+    }
 }
