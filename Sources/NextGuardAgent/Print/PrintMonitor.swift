@@ -56,21 +56,18 @@ final class PrintMonitor: ObservableObject {
 
         // Monitor CUPS spool directory for new print jobs
         startCUPSPolling()
+
         // Monitor print-to-PDF via FSEvents
         startPDFExportMonitoring()
 
-        DispatchQueue.main.async {
-            self.isActive = true
-        }
+        DispatchQueue.main.async { self.isActive = true }
         print("[OK] Print monitoring started")
     }
 
     func stopMonitoring() {
         cupsMonitorTimer?.invalidate()
         cupsMonitorTimer = nil
-        DispatchQueue.main.async {
-            self.isActive = false
-        }
+        DispatchQueue.main.async { self.isActive = false }
         logger.info("Print monitoring stopped")
     }
 
@@ -98,7 +95,6 @@ final class PrintMonitor: ObservableObject {
 
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             guard let output = String(data: data, encoding: .utf8), !output.isEmpty else { return }
-
             parseAndEvaluateJobs(output)
         } catch {
             logger.error("Failed to query CUPS: \(error.localizedDescription)")
@@ -106,14 +102,14 @@ final class PrintMonitor: ObservableObject {
     }
 
     private func parseAndEvaluateJobs(_ lpstatOutput: String) {
-        // lpstat -o format: "printer-123 username 1024 Mon 01 Jan 2026 10:00:00"
+        // lpstat -o format: "printer-123  username  1024  Mon 01 Jan 2026 10:00:00"
         let lines = lpstatOutput.components(separatedBy: "\n").filter { !$0.isEmpty }
 
         for line in lines {
             let parts = line.components(separatedBy: CharacterSet.whitespaces).filter { !$0.isEmpty }
             guard parts.count >= 4 else { continue }
 
-            let jobFullId = parts[0] // e.g. "HP_LaserJet-123"
+            let jobFullId = parts[0]  // e.g. "HP_LaserJet-123"
             let components = jobFullId.components(separatedBy: "-")
             guard let jobIdStr = components.last, let jobId = Int(jobIdStr) else { continue }
 
@@ -141,7 +137,6 @@ final class PrintMonitor: ObservableObject {
 
     // MARK: - Print-to-PDF Monitoring
     private func startPDFExportMonitoring() {
-        // Watch common PDF export directories
         let pdfPaths = [
             NSHomeDirectory() + "/Desktop",
             NSHomeDirectory() + "/Documents",
@@ -179,10 +174,7 @@ final class PrintMonitor: ObservableObject {
             }
         }
 
-        source.setCancelHandler {
-            close(fd)
-        }
-
+        source.setCancelHandler { close(fd) }
         source.resume()
     }
 
@@ -210,7 +202,9 @@ final class PrintMonitor: ObservableObject {
         )
 
         let action = policyEngine.determineAction(for: results)
-        let finalAction = (localMatch?.action == .block) ? .block : action
+        // Use strictest action: if local engine says block, override
+        let localWantsBlock = (localMatch?.action.rawValue.lowercased() == "block")
+        let finalAction: DLPAction = localWantsBlock ? .block : action
 
         if finalAction == .block {
             cancelPrintJob(job.jobId)
@@ -220,7 +214,7 @@ final class PrintMonitor: ObservableObject {
 
         // Log incident
         let matchedRules = results.map { $0.ruleName }
-        let event = PrintDLPEvent(
+        let _ = PrintDLPEvent(
             id: UUID().uuidString,
             timestamp: Date(),
             job: job,
@@ -231,12 +225,11 @@ final class PrintMonitor: ObservableObject {
 
         // Report to incident store
         for result in results {
-            let guiAction: RuleAction = result.action == .block ? .block : .audit
+            let actionStr = result.action == .block ? "Block" : "Audit"
             IncidentStoreManager.shared.addIncident(
                 policyName: result.ruleName,
-                action: guiAction,
-                details: "Print job #\(job.jobId) on \(job.printerName): \(result.matches.count) matches",
-                channel: "Print"
+                action: actionStr,
+                details: "Print job #\(job.jobId) on \(job.printerName): \(result.matches.count) matches"
             )
         }
 
@@ -271,12 +264,11 @@ final class PrintMonitor: ObservableObject {
         }
 
         for result in results {
-            let guiAction: RuleAction = result.action == .block ? .block : .audit
+            let actionStr = result.action == .block ? "Block" : "Audit"
             IncidentStoreManager.shared.addIncident(
                 policyName: result.ruleName,
-                action: guiAction,
-                details: "PDF export: \(filePath) - \(result.matches.count) matches",
-                channel: "Print"
+                action: actionStr,
+                details: "PDF export: \(filePath) - \(result.matches.count) matches"
             )
         }
     }
