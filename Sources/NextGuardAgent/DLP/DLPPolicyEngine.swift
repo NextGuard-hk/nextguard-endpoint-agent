@@ -144,6 +144,7 @@ final class DLPPolicyEngine {
     // MARK: - Policy Loading (from Console API response)
     func loadPoliciesFromConsole(_ remotePolicies: [[String: Any]]) {
         var parsed: [DLPRule] = []
+                for dict in remotePolicies {
             guard let id = dict["id"] as? String,
                   let name = dict["name"] as? String,
                   let enabled = dict["enabled"] as? Bool,
