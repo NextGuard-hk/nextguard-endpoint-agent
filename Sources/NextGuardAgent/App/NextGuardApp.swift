@@ -28,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Menu bar items
     private var statusMenuItem: NSMenuItem!
     private var policiesMenuItem: NSMenuItem!
+        private var isShowingContextMenu = false
     private var connectionMenuItem: NSMenuItem!
 
     // GUI controllers
@@ -235,19 +236,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
-    @objc func statusBarButtonClicked() {
+        @objc func statusBarButtonClicked() {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
-            statusItem.menu = buildContextMenu()
+            guard !isShowingContextMenu else { return }
+            isShowingContextMenu = true
+            let menu = buildContextMenu()
+            statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
+            isShowingContextMenu = false
         } else {
             mainWindowController?.showWindow(nil)
             mainWindowController?.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         }
     }
-
     private func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
         let titleItem = NSMenuItem(title: "NextGuard DLP Agent", action: nil, keyEquivalent: "")
