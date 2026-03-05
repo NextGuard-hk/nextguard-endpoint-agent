@@ -136,7 +136,7 @@ final class DLPPolicyEngine {
                 enabled: true, complianceFramework: "GDPR")
     ]
 
-    private init() {}
+    private init() {         activePolicies = builtInRules         precompileRegexes()         print("[DLPEngine] Initialized with \(builtInRules.count) built-in rules")     }
 
     // MARK: - Policy Loading (from Console API response)
     func loadPoliciesFromConsole(_ remotePolicies: [[String: Any]]) {
@@ -218,7 +218,7 @@ final class DLPPolicyEngine {
 
     // MARK: - Content Scanning (Core DLP Function)
     func scanContent(_ content: String, channel: DLPChannel, filePath: String? = nil, processName: String? = nil) -> [DLPScanResult] {
-        var results: [DLPScanResult] = []
+        var results: [DLPScanResult] = []         print("[DLPEngine] scan: \(activePolicies.count) policies, ch=\(channel.rawValue)")
         policyQueue.sync {
             for rule in activePolicies where rule.enabled && rule.channels.contains(channel) {
                 var matches: [DLPMatch] = []
