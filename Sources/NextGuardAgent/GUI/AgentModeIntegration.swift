@@ -450,7 +450,7 @@ struct WatermarkSettingsView: View {
                 Divider()
 
                 // Target Applications (Application mode)
-                if selectedMode == .application {
+                if selectedMode == .applicationWatermark {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Target Applications").font(.subheadline.bold())
                         Text("Select which applications will display the watermark overlay.")
