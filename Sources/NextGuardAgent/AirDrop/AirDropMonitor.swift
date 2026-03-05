@@ -51,7 +51,7 @@ final class AirDropMonitor: ObservableObject {
     // AirDrop staging directories on macOS
     private let airDropPaths: [String] = [
         NSHomeDirectory() + "/Library/Sharing",
-        "/private/var/folders",  // tmp staging
+        "/private/var/folders",       // tmp staging
         NSHomeDirectory() + "/Downloads"  // received files land here
     ]
 
@@ -61,13 +61,9 @@ final class AirDropMonitor: ObservableObject {
     func startMonitoring() {
         guard !isActive else { return }
         logger.info("Starting AirDrop DLP monitoring")
-
         startFSEventStream()
         monitorSharingDaemon()
-
-        DispatchQueue.main.async {
-            self.isActive = true
-        }
+        DispatchQueue.main.async { self.isActive = true }
         print("[OK] AirDrop monitoring started")
     }
 
@@ -78,9 +74,7 @@ final class AirDropMonitor: ObservableObject {
             FSEventStreamRelease(stream)
             eventStream = nil
         }
-        DispatchQueue.main.async {
-            self.isActive = false
-        }
+        DispatchQueue.main.async { self.isActive = false }
         logger.info("AirDrop monitoring stopped")
     }
 
@@ -112,7 +106,7 @@ final class AirDropMonitor: ObservableObject {
             &context,
             pathsToWatch,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.5,  // latency
+            0.5,   // latency
             flags
         ) else {
             logger.error("Failed to create FSEvent stream for AirDrop")
@@ -130,26 +124,26 @@ final class AirDropMonitor: ObservableObject {
             let path = paths[i]
             let flag = flags[i]
 
-            // Filter for AirDrop-related file events
-            guard isAirDropRelated(path) else { continue }
-
-            // Skip if already processed
-            guard !processedFiles.contains(path) else { continue }
-
-            // Check if it's a file creation/modification
-            let isCreated = (flag & UInt32(kFSEventStreamEventFlagItemCreated)) != 0
+            // Only care about file creation / modification
+            let isCreate = (flag & UInt32(kFSEventStreamEventFlagItemCreated)) != 0
             let isModified = (flag & UInt32(kFSEventStreamEventFlagItemModified)) != 0
             let isFile = (flag & UInt32(kFSEventStreamEventFlagItemIsFile)) != 0
 
-            if isFile && (isCreated || isModified) {
-                processedFiles.insert(path)
-                evaluateAirDropFile(path)
+            guard isFile && (isCreate || isModified) else { continue }
+            guard isAirDropRelated(path) else { continue }
+            guard !processedFiles.contains(path) else { continue }
+
+            processedFiles.insert(path)
+            evaluateAirDropFile(path)
+
+            // Prevent set from growing unbounded
+            if processedFiles.count > 1000 {
+                processedFiles.removeAll()
             }
         }
     }
 
     private func isAirDropRelated(_ path: String) -> Bool {
-        // AirDrop uses sharingd and DropZone
         let airDropIndicators = [
             "/Library/Sharing/",
             "com.apple.AirDrop",
@@ -200,12 +194,11 @@ final class AirDropMonitor: ObservableObject {
 
         // Log incidents
         for result in results {
-            let guiAction: RuleAction = result.action == .block ? .block : .audit
+            let actionStr = result.action == .block ? "Block" : "Audit"
             IncidentStoreManager.shared.addIncident(
                 policyName: result.ruleName,
-                action: guiAction,
-                details: "AirDrop \(transfer.direction.rawValue): \(fileName) (\(fileSize) bytes) - \(result.matches.count) matches",
-                channel: "AirDrop"
+                action: actionStr,
+                details: "AirDrop \(transfer.direction.rawValue): \(fileName) (\(fileSize) bytes) - \(result.matches.count) matches"
             )
         }
 
@@ -226,7 +219,6 @@ final class AirDropMonitor: ObservableObject {
 
     // MARK: - sharingd Process Monitoring
     private func monitorSharingDaemon() {
-        // Monitor sharingd (AirDrop daemon) activity via process list
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/log")
@@ -237,9 +229,7 @@ final class AirDropMonitor: ObservableObject {
 
             pipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
-                guard !data.isEmpty,
-                      let line = String(data: data, encoding: .utf8) else { return }
-
+                guard !data.isEmpty, let line = String(data: data, encoding: .utf8) else { return }
                 if line.contains("AirDrop") && (line.contains("send") || line.contains("receive")) {
                     self?.logger.info("AirDrop activity: \(line.prefix(200))")
                 }
