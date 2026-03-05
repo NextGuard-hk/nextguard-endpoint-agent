@@ -10,6 +10,7 @@
 import Foundation
 import AppKit
 import os.log
+import Vision
 
 // MARK: - Screen Capture Policy
 enum ScreenCapturePolicy: String, Codable {
@@ -130,11 +131,91 @@ final class ScreenCaptureMonitor: ObservableObject {
             }
         }
     }
+    private let policyEngine = DLPPolicyEngine.shared
+    private let localPolicyEngine = LocalPolicyEngine.shared
 
+    // MARK: - OCR Text Extraction (Vision Framework)
+    private func extractText(from imagePath: String, completion: @escaping (String?) -> Void) {
+        guard let image = NSImage(contentsOfFile: imagePath),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            completion(nil)
+            return
+        }
+        let request = VNRecognizeTextRequest { request, error in
+            guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                completion(nil)
+                return
+            }
+            let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+            completion(text.isEmpty ? nil : text)
+        }
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en", "zh-Hant", "zh-Hans"]
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        DispatchQueue.global(qos: .utility).async {
+            try? handler.perform([request])
+        }
+    }
+
+
+    
     private func handleCapture(filePath: String, isRecording: Bool, appName: String) {
         totalCaptures += 1
         let captureType = isRecording ? "screenRecording" : "screenshot"
         logger.info("Screen capture detected: \(captureType) by \(appName)")
+
+                // OCR + DLP Policy Scanning for screenshots
+        if !isRecording {
+            extractText(from: filePath) { [weak self] ocrText in
+                guard let self = self else { return }
+                if let text = ocrText {
+                    self.logger.info("OCR extracted \(text.count) characters from screenshot")
+                    // Scan with DLP Policy Engine
+                    let results = self.policyEngine.scanContent(text, channel: .screenshot, filePath: filePath, processName: appName)
+                    let localMatch = self.localPolicyEngine.evaluate(content: text, filePath: filePath, destination: nil as String?, app: appName)
+                    if !results.isEmpty || localMatch != nil {
+                        let action = self.policyEngine.determineAction(for: results)
+                        self.logger.warning("Screenshot DLP MATCH: \(results.count) policy violations detected")
+                        if action == .block || action == .quarantine {
+                            try? FileManager.default.removeItem(atPath: filePath)
+                            DispatchQueue.main.async { self.blockedCaptures += 1 }
+                            self.logger.warning("Screenshot BLOCKED and deleted: \(filePath)")
+                        }
+                        for result in results {
+                            IncidentStoreManager.shared.addIncident(
+                                policyName: result.ruleName,
+                                action: result.action == .block ? "Block" : "Audit",
+                                details: "Screenshot OCR: \(result.matches.count) matches for \(result.ruleName) in \(filePath)"
+                            )
+                        }
+                        if let local = localMatch {
+                            IncidentStoreManager.shared.addIncident(
+                                policyName: local.matchedRule.name,
+                                action: local.action.rawValue,
+                                details: "Screenshot OCR (local): matched \(local.matchedRule.name) in \(filePath)"
+                            )
+                        }
+                        Task {
+                            for result in results {
+                                await ManagementClient.shared.reportIncident(
+                                    policyId: result.ruleId,
+                                    channel: "screenshot",
+                                    severity: result.severity.rawValue,
+                                    action: result.action.rawValue,
+                                    matchCount: result.matches.count,
+                                    details: "Screenshot OCR: \(result.ruleName)"
+                                )
+                            }
+                        }
+                    } else {
+                        self.logger.info("Screenshot OCR: no sensitive content detected")
+                    }
+                } else {
+                    self.logger.info("Screenshot OCR: no text extracted (image only)")
+                }
+            }
+            return  // OCR handles all incident logic for screenshots
+        }
 
         var action: DLPAction = .audit
         switch currentPolicy {
