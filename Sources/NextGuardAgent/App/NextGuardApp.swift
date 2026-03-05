@@ -277,8 +277,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let results = policyEngine.scanContent(content, channel: .clipboard)
         let localMatch = localPolicyEngine.evaluate(
             content: content,
-            filePath: nil,
-            destination: nil,
+            filePath: nil as String?,
+            destination: nil as String?,
             app: "Clipboard"
         )
 
