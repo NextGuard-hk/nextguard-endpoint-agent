@@ -3,20 +3,16 @@
 //  NextGuard Endpoint DLP Agent
 //
 //  Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
-//  Screenshot/Screen recording DLP monitoring
-//  Ref: ISO 27001:2022 A.8.12, CIS Controls v8 3.3
 //
 import Foundation
 import AppKit
 import os.log
 import Vision
 
-// MARK: - Screen Capture Policy
 enum ScreenCapturePolicy: String, Codable {
     case allow, auditOnly, blockAll, blockThirdParty
 }
 
-// MARK: - Screen Capture Monitor
 final class ScreenCaptureMonitor: ObservableObject {
     static let shared = ScreenCaptureMonitor()
     private let logger = Logger(subsystem: "com.nextguard.agent", category: "ScreenCapture")
@@ -42,6 +38,7 @@ final class ScreenCaptureMonitor: ObservableObject {
 
     private init() {}
 
+    // MARK: - Start / Stop
     func startMonitoring() {
         guard !isActive else { return }
         logger.info("Starting screen capture DLP monitoring")
@@ -57,73 +54,67 @@ final class ScreenCaptureMonitor: ObservableObject {
         processMonitorTimer?.invalidate()
         processMonitorTimer = nil
         DispatchQueue.main.async { self.isActive = false }
-        logger.info("Screen capture monitoring stopped")
     }
 
+    // MARK: - Directory Watcher
     private func watchScreenshotDirectory() {
-        let screenshotPath = getScreenshotDirectory()
-        print("[ScreenCapture] Watching directory: \(screenshotPath)")
-        let fd = open(screenshotPath, O_EVTONLY)
+        let path = getScreenshotDirectory()
+        print("[ScreenCapture] Watching: \(path)")
+        let fd = open(path, O_EVTONLY)
         guard fd >= 0 else {
-            print("[ScreenCapture] ERROR: Cannot open directory: \(screenshotPath)")
+            print("[ScreenCapture] ERROR: Cannot open: \(path)")
             return
         }
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: .write,
+        let src = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: .write,
             queue: DispatchQueue.global(qos: .utility)
         )
-        source.setEventHandler { [weak self] in
-            self?.checkForNewScreenshots(in: screenshotPath)
-        }
-        source.setCancelHandler { close(fd) }
-        screenshotWatcher = source
-        source.resume()
+        src.setEventHandler { [weak self] in self?.checkForNewScreenshots(in: path) }
+        src.setCancelHandler { close(fd) }
+        screenshotWatcher = src
+        src.resume()
     }
 
     private func getScreenshotDirectory() -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["read", "com.apple.screencapture", "location"]
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        p.arguments = ["read", "com.apple.screencapture", "location"]
         let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
+        p.standardOutput = pipe
+        p.standardError = Pipe()
+        if let _ = try? p.run() {
+            p.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
-                print("[ScreenCapture] Custom screenshot dir: \(path)")
-                return path
-            }
-        } catch {}
-        let desktop = NSHomeDirectory() + "/Desktop"
-        print("[ScreenCapture] Using default screenshot dir: \(desktop)")
-        return desktop
+            let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !str.isEmpty { return str }
+        }
+        return NSHomeDirectory() + "/Desktop"
     }
 
     private func checkForNewScreenshots(in directory: String) {
         guard let files = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return }
         for file in files {
-            let filePath = directory + "/" + file
-            // Match macOS screenshot naming: English + Chinese locales
-            let isScreenshot = file.hasPrefix("Screenshot") || file.hasPrefix("Screen Shot") ||
-                               file.hasPrefix("Screen Recording") || file.contains("截圖") || file.contains("截屏")
-            let isValidExt = file.hasSuffix(".png") || file.hasSuffix(".jpg") ||
-                             file.hasSuffix(".mov") || file.hasSuffix(".mp4")
-            guard isScreenshot && isValidExt else { continue }
-            guard !knownScreenshots.contains(filePath) else { continue }
-            guard let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
+            let fp = directory + "/" + file
+            let isShot = file.hasPrefix("Screenshot") || file.hasPrefix("Screen Shot") ||
+                         file.hasPrefix("Screen Recording") || file.contains("截圖") || file.contains("截屏")
+            let isImg  = file.hasSuffix(".png") || file.hasSuffix(".jpg") ||
+                         file.hasSuffix(".mov") || file.hasSuffix(".mp4")
+            guard isShot && isImg else { continue }
+            guard !knownScreenshots.contains(fp) else { continue }
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: fp),
                   let created = attrs[.creationDate] as? Date,
-                  Date().timeIntervalSince(created) < 10.0 else { continue }
-            knownScreenshots.insert(filePath)
-            print("[ScreenCapture] New screenshot detected: \(file)")
-            let isRecording = file.hasSuffix(".mov") || file.hasSuffix(".mp4")
-            handleCapture(filePath: filePath, isRecording: isRecording, appName: "screencapture")
+                  Date().timeIntervalSince(created) < 15.0 else { continue }
+            knownScreenshots.insert(fp)
+            print("[ScreenCapture] Detected: \(file)")
+            let isRec = file.hasSuffix(".mov") || file.hasSuffix(".mp4")
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.5) {
+                self.handleCapture(filePath: fp, isRecording: isRec, appName: "screencapture")
+            }
         }
-        if knownScreenshots.count > 1000 { knownScreenshots.removeAll() }
+        if knownScreenshots.count > 500 { knownScreenshots.removeAll() }
     }
 
+    // MARK: - Process Monitor
     private func monitorCaptureProcesses() {
         processMonitorTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             self?.checkRunningCaptureApps()
@@ -131,16 +122,13 @@ final class ScreenCaptureMonitor: ObservableObject {
     }
 
     private func checkRunningCaptureApps() {
-        let runningApps = NSWorkspace.shared.runningApplications
-        for app in runningApps {
+        for app in NSWorkspace.shared.runningApplications {
             guard let name = app.localizedName else { continue }
             if screenCaptureApps.contains(where: { name.lowercased().contains($0.lowercased()) }) {
                 if currentPolicy == .blockThirdParty && name != "screencapture" && name != "Screenshot" {
-                    logger.warning("Third-party capture app blocked: \(name)")
                     app.terminate()
                     IncidentStoreManager.shared.addIncident(
-                        policyName: "Screen Capture Policy",
-                        action: "Block",
+                        policyName: "Screen Capture Policy", action: "Block",
                         details: "Third-party capture app terminated: \(name)"
                     )
                 }
@@ -148,133 +136,126 @@ final class ScreenCaptureMonitor: ObservableObject {
         }
     }
 
-    // MARK: - OCR Text Extraction (Vision Framework)
-    private func extractText(from imagePath: String, completion: @escaping (String?) -> Void) {
-        guard let image = NSImage(contentsOfFile: imagePath),
-              let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let cgImage = bitmap.cgImage else {
-            print("[ScreenCapture] OCR: Failed to load image: \(imagePath)")
-            completion(nil)
-            return
+    // MARK: - OCR (synchronous, runs on background thread)
+    private func ocrExtract(from imagePath: String) -> String? {
+        print("[ScreenCapture] OCR start: \(imagePath)")
+        guard let image = NSImage(contentsOfFile: imagePath) else {
+            print("[ScreenCapture] OCR: NSImage load failed")
+            return nil
         }
-        print("[ScreenCapture] OCR: Processing image \(Int(image.size.width))x\(Int(image.size.height))")
-        let request = VNRecognizeTextRequest { request, error in
-            if let error = error {
-                print("[ScreenCapture] OCR error: \(error.localizedDescription)")
-                completion(nil)
+        guard let tiff = image.tiffRepresentation,
+              let bmp  = NSBitmapImageRep(data: tiff),
+              let cg   = bmp.cgImage else {
+            print("[ScreenCapture] OCR: cgImage conversion failed")
+            return nil
+        }
+        print("[ScreenCapture] OCR: image \(Int(image.size.width))x\(Int(image.size.height))")
+
+        var extractedText: String? = nil
+        let semaphore = DispatchSemaphore(value: 0)
+
+        let req = VNRecognizeTextRequest { req, err in
+            defer { semaphore.signal() }
+            if let err = err {
+                print("[ScreenCapture] OCR VN error: \(err)")
                 return
             }
-            guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                print("[ScreenCapture] OCR: No observations")
-                completion(nil)
-                return
-            }
-            let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-            print("[ScreenCapture] OCR: Extracted \(text.count) chars, \(observations.count) text blocks")
-            completion(text.isEmpty ? nil : text)
+            let obs = req.results as? [VNRecognizedTextObservation] ?? []
+            print("[ScreenCapture] OCR: \(obs.count) text observations")
+            let lines = obs.compactMap { $0.topCandidates(1).first?.string }
+            let joined = lines.joined(separator: " ")
+            print("[ScreenCapture] OCR result (\(joined.count) chars): \(String(joined.prefix(300)))")
+            extractedText = joined.isEmpty ? nil : joined
         }
-        request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["en", "zh-Hant", "zh-Hans"]
-        request.usesLanguageCorrection = true
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                try handler.perform([request])
-            } catch {
-                print("[ScreenCapture] OCR perform error: \(error)")
-                completion(nil)
-            }
+        req.recognitionLevel = .accurate
+        req.recognitionLanguages = ["en-US", "zh-Hant", "zh-Hans"]
+        req.usesLanguageCorrection = false  // faster, less risk of mangling numbers
+
+        let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+        do {
+            print("[ScreenCapture] OCR: calling perform...")
+            try handler.perform([req])
+            print("[ScreenCapture] OCR: perform returned")
+        } catch {
+            print("[ScreenCapture] OCR: perform threw: \(error)")
+            semaphore.signal()
         }
+        semaphore.wait()
+        return extractedText
     }
 
     // MARK: - Handle Capture
     private func handleCapture(filePath: String, isRecording: Bool, appName: String) {
         DispatchQueue.main.async { self.totalCaptures += 1 }
-        let captureType = isRecording ? "screenRecording" : "screenshot"
-        logger.info("Screen capture detected: \(captureType) by \(appName)")
-        print("[ScreenCapture] handleCapture: \(captureType) at \(filePath)")
+        print("[ScreenCapture] handleCapture: \(filePath)")
 
-        // For screenshots, run OCR + DLP policy scanning
-        if !isRecording {
-            // Small delay to ensure file is fully written
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self = self else { return }
-                self.extractText(from: filePath) { [weak self] ocrText in
-                    guard let self = self else { return }
-                    if let text = ocrText, !text.isEmpty {
-                        print("[ScreenCapture] OCR text preview: \(String(text.prefix(200)))")
-                        // Scan with DLP Policy Engine
-                        let results = self.policyEngine.scanContent(text, channel: .screenshot, filePath: filePath, processName: appName)
-                        let localMatch = self.localPolicyEngine.evaluate(content: text, filePath: filePath, destination: nil as String?, app: appName)
-
-                        if !results.isEmpty || localMatch != nil {
-                            let action = self.policyEngine.determineAction(for: results)
-                            print("[ScreenCapture] DLP MATCH! \(results.count) server rules, local=\(localMatch != nil), action=\(action.rawValue)")
-
-                            if action == .block || action == .quarantine {
-                                try? FileManager.default.removeItem(atPath: filePath)
-                                DispatchQueue.main.async { self.blockedCaptures += 1 }
-                                self.logger.warning("Screenshot BLOCKED: \(filePath)")
-                            }
-                            for result in results {
-                                IncidentStoreManager.shared.addIncident(
-                                    policyName: result.ruleName,
-                                    action: result.action == .block ? "Block" : "Audit",
-                                    details: "Screenshot OCR: \(result.matches.count) matches for \(result.ruleName)"
-                                )
-                            }
-                            if let local = localMatch {
-                                IncidentStoreManager.shared.addIncident(
-                                    policyName: local.matchedRule.name,
-                                    action: local.action.rawValue,
-                                    details: "Screenshot OCR (local): \(local.matchedRule.name)"
-                                )
-                            }
-                            Task {
-                                for result in results {
-                                    await ManagementClient.shared.reportIncident(
-                                        policyId: result.ruleId, channel: "screenshot",
-                                        severity: result.severity.rawValue, action: result.action.rawValue,
-                                        matchCount: result.matches.count,
-                                        details: "Screenshot OCR: \(result.ruleName)"
-                                    )
-                                }
-                            }
-                        } else {
-                            print("[ScreenCapture] OCR scan: no sensitive content detected")
-                            // Still log as audit event
-                            IncidentStoreManager.shared.addIncident(
-                                policyName: "Screen Capture Detection",
-                                action: "Audit",
-                                details: "Screenshot captured (OCR clean): \(filePath)"
-                            )
-                        }
-                    } else {
-                        print("[ScreenCapture] OCR: no text found, logging basic capture")
-                        IncidentStoreManager.shared.addIncident(
-                            policyName: "Screen Capture Detection",
-                            action: "Audit",
-                            details: "Screenshot captured (no OCR text): \(filePath)"
-                        )
-                    }
-                }
-            }
+        guard !isRecording else {
+            // Recording: just log
+            IncidentStoreManager.shared.addIncident(
+                policyName: "Screen Capture Detection", action: "Audit",
+                details: "Screen recording: \(filePath)"
+            )
             return
         }
 
-        // Screen recording (non-OCR path)
-        IncidentStoreManager.shared.addIncident(
-            policyName: "Screen Capture Detection",
-            action: "Audit",
-            details: "\(captureType) by \(appName): \(filePath)"
-        )
-        Task {
-            await ManagementClient.shared.reportIncident(
-                policyId: "screen-capture", channel: "screenshot",
-                severity: "medium", action: "audit",
-                matchCount: 1, details: "\(captureType) by \(appName)"
+        // OCR + DLP scan
+        let text = ocrExtract(from: filePath)
+
+        guard let ocrText = text, !ocrText.isEmpty else {
+            print("[ScreenCapture] OCR: no text, logging basic audit")
+            IncidentStoreManager.shared.addIncident(
+                policyName: "Screen Capture Detection", action: "Audit",
+                details: "Screenshot (no OCR text): \(filePath)"
             )
+            return
+        }
+
+        // DLP scan
+        let results = policyEngine.scanContent(ocrText, channel: .screenshot, filePath: filePath, processName: appName)
+        let localMatch = localPolicyEngine.evaluate(content: ocrText, filePath: filePath, destination: nil as String?, app: appName)
+        print("[ScreenCapture] DLP: \(results.count) server matches, local=\(localMatch != nil)")
+
+        if results.isEmpty && localMatch == nil {
+            print("[ScreenCapture] DLP: clean")
+            IncidentStoreManager.shared.addIncident(
+                policyName: "Screen Capture Detection", action: "Audit",
+                details: "Screenshot OCR clean: \(filePath)"
+            )
+            return
+        }
+
+        // Policy triggered
+        let action = policyEngine.determineAction(for: results)
+        print("[ScreenCapture] DLP MATCH action=\(action.rawValue)")
+
+        if action == .block || action == .quarantine {
+            try? FileManager.default.removeItem(atPath: filePath)
+            DispatchQueue.main.async { self.blockedCaptures += 1 }
+        }
+
+        for result in results {
+            IncidentStoreManager.shared.addIncident(
+                policyName: result.ruleName,
+                action: result.action == .block ? "Block" : "Audit",
+                details: "Screenshot OCR: \(result.matches.count) match(es) — \(result.ruleName)"
+            )
+        }
+        if let local = localMatch {
+            IncidentStoreManager.shared.addIncident(
+                policyName: local.matchedRule.name,
+                action: local.action.rawValue,
+                details: "Screenshot OCR (local policy): \(local.matchedRule.name)"
+            )
+        }
+        Task {
+            for result in results {
+                await ManagementClient.shared.reportIncident(
+                    policyId: result.ruleId, channel: "screenshot",
+                    severity: result.severity.rawValue, action: result.action.rawValue,
+                    matchCount: result.matches.count,
+                    details: "Screenshot OCR: \(result.ruleName)"
+                )
+            }
         }
     }
 }
