@@ -150,7 +150,7 @@ struct AgentSettingsContentView: View {
                 ("globe", "Browser", "Monitor browser uploads and downloads", true),
                 ("printer.fill", "Print", "Audit print-to-file operations", false),
                 ("drop.fill", "Watermark", "On-screen watermark overlay", WatermarkManager.shared.config.mode != .disabled),
-                ("shield.lefthalf.filled", "Anti-Virus", "Scan local files for malware and threats", AntiVirusScanner.shared.isEnabled),
+                ("shield.lefthalf.filled", "Anti-Virus", "Scan local files for malware and threats", AntiVirusScanner.shared.isRealTimeEnabled),
             ]
             ForEach(channels, id: \.1) { icon, title, subtitle, active in
                 HStack(spacing: 10) {
