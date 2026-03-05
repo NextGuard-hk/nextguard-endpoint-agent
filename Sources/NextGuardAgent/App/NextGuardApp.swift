@@ -30,12 +30,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var policiesMenuItem: NSMenuItem!
     private var connectionMenuItem: NSMenuItem!
 
-    // New: Full window controller
+    // GUI controllers
     private var menuBarController: MenuBarController?
+    private var mainWindowController: MainWindowController?
 
     static func main() {
         let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)
+        app.setActivationPolicy(.regular)
         let delegate = AppDelegate()
         app.delegate = delegate
         app.run()
@@ -45,7 +46,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Self.logger.info("NextGuard DLP Agent launching")
         print("[OK] Application launched")
 
-        // Setup menu bar controller (new full-featured GUI)
+        // Setup main window (full-featured GUI)
+        mainWindowController = MainWindowController()
+        mainWindowController?.showWindow(nil)
+        mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        print("[OK] Main window opened")
+
+        // Setup menu bar controller
         menuBarController = MenuBarController()
         menuBarController?.setupMenuBar()
 
@@ -53,27 +61,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupMenu()
 
-        // Start real-time monitoring - ALL DLP channels
+        // Start real-time monitoring
         ClipboardMonitor.shared.startMonitoring()
         print("[OK] Clipboard monitoring started")
 
+        // Start file system DLP monitoring
         FileSystemWatcher.shared.startWatching()
         print("[OK] File system monitoring started")
-
-        USBDeviceMonitor.shared.startMonitoring()
-        print("[OK] USB monitoring started")
-
-        PrintMonitor.shared.startMonitoring()
-        print("[OK] Print monitoring started")
-
-        AirDropMonitor.shared.startMonitoring()
-        print("[OK] AirDrop monitoring started")
-
-        ScreenCaptureMonitor.shared.startMonitoring()
-        print("[OK] Screen capture monitoring started")
-
-        NetworkMonitor.shared.startMonitoring()
-        print("[OK] Network monitoring started")
 
         // Async initialization
         Task {
@@ -140,16 +134,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("[OK] NextGuard DLP Agent shutting down")
         ClipboardMonitor.shared.stopMonitoring()
         FileSystemWatcher.shared.stopWatching()
-        USBDeviceMonitor.shared.stopMonitoring()
-        PrintMonitor.shared.stopMonitoring()
-        AirDropMonitor.shared.stopMonitoring()
-        ScreenCaptureMonitor.shared.stopMonitoring()
-        NetworkMonitor.shared.stopMonitoring()
         mgmtClient.stopHeartbeat()
         policyEngine.stopPolicyRefresh()
     }
 
-        // MARK: - Status Item Setup
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            mainWindowController?.showWindow(nil)
+            mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        }
+        return true
+    }
+
+    // MARK: - Status Item Setup
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -206,9 +203,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
         } else {
-            if let button = statusItem.button {
-                GUIManager.shared.togglePopover(relativeTo: button)
-            }
+            mainWindowController?.showWindow(nil)
+            mainWindowController?.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
@@ -261,10 +258,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Actions
     @objc func showDashboard() {
-        menuBarController?.openMainWindow()
-        if let button = statusItem.button {
-            GUIManager.shared.openPopover(relativeTo: button)
-        }
+        mainWindowController?.showWindow(nil)
+        mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc func scanClipboard() {
