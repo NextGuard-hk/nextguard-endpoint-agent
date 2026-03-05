@@ -163,7 +163,7 @@ final class DLPPolicyEngine {
                                   complianceFramework: framework))
         }
         if !parsed.isEmpty {
-            activePolicies = parsed
+            activePolicies = parsed + builtInRules.filter { br in !parsed.contains { $0.id == br.id } }
             logger.info("Loaded \(parsed.count) policies from console")
         } else {
             activePolicies = builtInRules
