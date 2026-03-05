@@ -167,7 +167,7 @@ struct AgentSettingsContentView: View {
             Text("About NextGuard Agent").font(.headline).padding(.top, 16)
 
             VStack(spacing: 0) {
-                aboutRow("Version", "1.0.0")
+                aboutRow("Version", AgentConfig.shared.agentVersion)
                 Divider()
                 aboutRow("Agent Mode", isManaged ? "Managed" : "Standalone")
                 Divider()
