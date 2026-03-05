@@ -20,7 +20,7 @@ struct AgentSettingsContentView: View {
         case enrollment = "Organisation"
         case monitoring = "Monitoring"
         case about = "About"
-                case watermark = "Watermark"
+        case watermark = "Watermark"
         var id: String { rawValue }
     }
 
@@ -61,7 +61,8 @@ struct AgentSettingsContentView: View {
                         monitoringSection
                     case .about:
                         aboutSection
-                        
+                    case .watermark:
+                        watermarkSection
                     }
                 }
             }
@@ -94,7 +95,7 @@ struct AgentSettingsContentView: View {
         case .enrollment: return "building.2.fill"
         case .monitoring: return "eye.fill"
         case .about: return "info.circle.fill"
-                    case .watermark: return "drop.fill"
+        case .watermark: return "drop.fill"
         }
     }
 
@@ -118,19 +119,18 @@ struct AgentSettingsContentView: View {
     private var monitoringSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Monitoring Channels").font(.headline).padding(.top, 16)
-
             let channels: [(String, String, String, Bool)] = [
                 ("clipboard.fill", "Clipboard", "Monitor copy/paste operations", true),
                 ("envelope.fill", "Email", "Scan outgoing email attachments", true),
                 ("externaldrive.fill", "USB / Removable Media", "Block unauthorised transfers", true),
                 ("network", "Network Upload", "Monitor web uploads and cloud sync", true),
-                                ("airplayaudio", "AirDrop", "Monitor AirDrop file transfers", true),
+                ("airplayaudio", "AirDrop", "Monitor AirDrop file transfers", true),
                 ("doc.fill", "File System", "Monitor file operations and movements", true),
                 ("camera.fill", "Screen Capture", "Detect and audit screenshots", true),
                 ("globe", "Browser", "Monitor browser uploads and downloads", true),
                 ("printer.fill", "Print", "Audit print-to-file operations", false),
+                ("drop.fill", "Watermark", "On-screen watermark overlay", WatermarkManager.shared.config.mode != .disabled),
             ]
-
             ForEach(channels, id: \.1) { icon, title, subtitle, active in
                 HStack(spacing: 10) {
                     Image(systemName: icon)
@@ -153,7 +153,6 @@ struct AgentSettingsContentView: View {
                 .padding(.vertical, 4)
                 if title != "Watermark" { Divider() }
             }
-
             if modeManager.managedSettingsLocked {
                 HStack(spacing: 6) {
                     Image(systemName: "lock.fill").foregroundColor(.orange).font(.caption)
@@ -172,7 +171,6 @@ struct AgentSettingsContentView: View {
         let isManaged = modeManager.mode == AgentMode.managed
         return VStack(alignment: .leading, spacing: 10) {
             Text("About NextGuard Agent").font(.headline).padding(.top, 16)
-
             VStack(spacing: 0) {
                 aboutRow("Version", AgentConfig.shared.agentVersion)
                 Divider()
@@ -193,7 +191,7 @@ struct AgentSettingsContentView: View {
         .padding(16)
     }
 
-        // MARK: - Watermark Section
+    // MARK: - Watermark Section
     private var watermarkSection: some View {
         WatermarkSettingsView()
     }
@@ -212,11 +210,9 @@ struct AgentSettingsContentView: View {
 struct AgentModeDashboardOverlay: View {
     @StateObject private var modeManager = AgentModeManager.shared
     @StateObject private var engine = LocalPolicyEngine.shared
-
     var body: some View {
         let isManaged = modeManager.mode == AgentMode.managed
         VStack(spacing: 12) {
-            // Agent Mode Banner
             HStack(spacing: 10) {
                 Image(systemName: isManaged ? "building.2.fill" : "laptopcomputer")
                     .foregroundColor(isManaged ? .blue : .green)
@@ -233,7 +229,6 @@ struct AgentModeDashboardOverlay: View {
                 }
                 Spacer()
                 if isManaged {
-                    // Console reachability
                     HStack(spacing: 4) {
                         Circle()
                             .fill(modeManager.isConsoleReachable ? Color.green : Color.orange)
@@ -245,16 +240,12 @@ struct AgentModeDashboardOverlay: View {
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(
-                isManaged ?
-                Color.blue.opacity(0.06) : Color.green.opacity(0.06)
+                isManaged ? Color.blue.opacity(0.06) : Color.green.opacity(0.06)
             ))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-                isManaged ?
-                Color.blue.opacity(0.15) : Color.green.opacity(0.15),
+                isManaged ? Color.blue.opacity(0.15) : Color.green.opacity(0.15),
                 lineWidth: 1
             ))
-
-            // Policy Engine Stats
             HStack(spacing: 16) {
                 miniStat("Local Rules", "\(engine.localRules.count)", .blue)
                 miniStat("Server Rules", "\(engine.serverRules.count)", .purple)
@@ -263,7 +254,6 @@ struct AgentModeDashboardOverlay: View {
             }
         }
     }
-
     private func miniStat(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(spacing: 4) {
             Text(value).font(.headline).foregroundColor(color)
@@ -275,10 +265,9 @@ struct AgentModeDashboardOverlay: View {
     }
 }
 
-// MARK: - Sidebar Agent Mode Badge (for MainContentView sidebar)
+// MARK: - Sidebar Agent Mode Badge
 struct SidebarAgentBadge: View {
     @StateObject private var modeManager = AgentModeManager.shared
-
     var body: some View {
         let isManaged = modeManager.mode == AgentMode.managed
         VStack(spacing: 4) {
@@ -293,34 +282,29 @@ struct SidebarAgentBadge: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(Capsule().fill(
-                isManaged ?
-                Color.blue.opacity(0.1) : Color.green.opacity(0.1)
+                isManaged ? Color.blue.opacity(0.1) : Color.green.opacity(0.1)
             ))
             if isManaged, let name = modeManager.enrolledDevice?.tenantName {
-                Text(name)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                Text(name).font(.caption2).foregroundColor(.secondary).lineLimit(1)
             }
         }
         .padding(.bottom, 4)
     }
 }
 
-// MARK: - OfflineQueueManager stub (referenced by AgentModeManager)
+// MARK: - OfflineQueueManager stub
 class OfflineQueueManager {
     static let shared = OfflineQueueManager()
     func enterOfflineMode() {
         print("[OfflineQueue] Entered offline mode - caching incidents locally")
     }
-        func enqueueAuditEvent(_ entry: TamperAuditEntry) {
+    func enqueueAuditEvent(_ entry: TamperAuditEntry) {
         print("[OfflineQueue] Queued audit event: \(entry.action)")
     }
     func flushQueueIfNeeded() {
         print("[OfflineQueue] Flushing queued incidents to Console")
     }
 }
-
 
 // MARK: - Watermark Settings View
 struct WatermarkSettingsView: View {
@@ -390,7 +374,8 @@ struct WatermarkSettingsView: View {
                             config.showTimestamp = val
                             watermarkManager.updateConfig(config)
                         }
-title != "Watermark"                        .toggleStyle(.switch)
+                    Toggle("Custom Text", isOn: $showCustomText)
+                        .toggleStyle(.switch)
                         .onChange(of: showCustomText) { val in
                             var config = watermarkManager.config
                             config.showCustomText = val
@@ -415,7 +400,8 @@ title != "Watermark"                        .toggleStyle(.switch)
                     HStack {
                         Text("Opacity").font(.caption)
                         Slider(value: $opacity, in: 0.02...0.3, step: 0.02)
-title != "Watermark"                                var config = watermarkManager.config
+                            .onChange(of: opacity) { val in
+                                var config = watermarkManager.config
                                 config.opacity = CGFloat(val)
                                 watermarkManager.updateConfig(config)
                             }
