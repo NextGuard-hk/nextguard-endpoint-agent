@@ -6,7 +6,6 @@
 // to the GUI views (Dashboard, Policies, Settings, Sidebar)
 // This file provides agent-mode-aware replacement views
 //
-
 import SwiftUI
 
 // MARK: - TargetApp model for Application watermark mode
@@ -43,6 +42,7 @@ struct AgentSettingsContentView: View {
         case monitoring = "Monitoring"
         case about = "About"
         case watermark = "Watermark"
+        case antivirus = "Anti-Virus"
         var id: String { rawValue }
     }
 
@@ -58,7 +58,6 @@ struct AgentSettingsContentView: View {
             }
             .padding(16)
             Divider()
-
             HStack(spacing: 0) {
                 // Settings sidebar
                 VStack(spacing: 2) {
@@ -69,9 +68,7 @@ struct AgentSettingsContentView: View {
                 }
                 .frame(width: 160)
                 .padding(.vertical, 8)
-
                 Divider()
-
                 // Content
                 ScrollView {
                     switch selectedSection {
@@ -85,6 +82,8 @@ struct AgentSettingsContentView: View {
                         aboutSection
                     case .watermark:
                         watermarkSection
+                    case .antivirus:
+                        antivirusSection
                     }
                 }
             }
@@ -117,6 +116,7 @@ struct AgentSettingsContentView: View {
         case .monitoring: return "eye.fill"
         case .about: return "info.circle.fill"
         case .watermark: return "drop.fill"
+        case .antivirus: return "shield.lefthalf.filled"
         }
     }
 
@@ -139,7 +139,6 @@ struct AgentSettingsContentView: View {
     private var monitoringSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Monitoring Channels").font(.headline).padding(.top, 16)
-
             let channels: [(String, String, String, Bool)] = [
                 ("clipboard.fill", "Clipboard", "Monitor copy/paste operations", true),
                 ("envelope.fill", "Email", "Scan outgoing email attachments", true),
@@ -151,8 +150,8 @@ struct AgentSettingsContentView: View {
                 ("globe", "Browser", "Monitor browser uploads and downloads", true),
                 ("printer.fill", "Print", "Audit print-to-file operations", false),
                 ("drop.fill", "Watermark", "On-screen watermark overlay", WatermarkManager.shared.config.mode != .disabled),
+                ("shield.lefthalf.filled", "Anti-Virus", "Scan local files for malware and threats", AntiVirusScanner.shared.isEnabled),
             ]
-
             ForEach(channels, id: \.1) { icon, title, subtitle, active in
                 HStack(spacing: 10) {
                     Image(systemName: icon)
@@ -173,9 +172,8 @@ struct AgentSettingsContentView: View {
                         .foregroundColor(active ? .green : .secondary)
                 }
                 .padding(.vertical, 4)
-                if title != "Watermark" { Divider() }
+                if title != "Anti-Virus" { Divider() }
             }
-
             if modeManager.managedSettingsLocked {
                 HStack(spacing: 6) {
                     Image(systemName: "lock.fill").foregroundColor(.orange).font(.caption)
@@ -219,6 +217,11 @@ struct AgentSettingsContentView: View {
         WatermarkSettingsView()
     }
 
+    // MARK: - Anti-Virus Section
+    private var antivirusSection: some View {
+        AntiVirusSettingsView()
+    }
+
     private func aboutRow(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label).font(.system(size: 11)).foregroundColor(.secondary)
@@ -228,7 +231,6 @@ struct AgentSettingsContentView: View {
         .padding(.horizontal, 12).padding(.vertical, 7)
     }
 }
-
 // MARK: - Enhanced Dashboard with Agent Mode
 struct AgentModeDashboardOverlay: View {
     @StateObject private var modeManager = AgentModeManager.shared
@@ -267,9 +269,9 @@ struct AgentModeDashboardOverlay: View {
                 isManaged ? Color.blue.opacity(0.06) : Color.green.opacity(0.06)
             ))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-                isManaged ? Color.blue.opacity(0.15) : Color.green.opacity(0.15), lineWidth: 1
+                isManaged ? Color.blue.opacity(0.15) : Color.green.opacity(0.15),
+                lineWidth: 1
             ))
-
             HStack(spacing: 16) {
                 miniStat("Local Rules", "\(engine.localRules.count)", .blue)
                 miniStat("Server Rules", "\(engine.serverRules.count)", .purple)
@@ -321,15 +323,9 @@ struct SidebarAgentBadge: View {
 // MARK: - OfflineQueueManager stub
 class OfflineQueueManager {
     static let shared = OfflineQueueManager()
-    func enterOfflineMode() {
-        print("[OfflineQueue] Entered offline mode - caching incidents locally")
-    }
-    func enqueueAuditEvent(_ entry: TamperAuditEntry) {
-        print("[OfflineQueue] Queued audit event: \(entry.action)")
-    }
-    func flushQueueIfNeeded() {
-        print("[OfflineQueue] Flushing queued incidents to Console")
-    }
+    func enterOfflineMode() { print("[OfflineQueue] Entered offline mode - caching incidents locally") }
+    func enqueueAuditEvent(_ entry: TamperAuditEntry) { print("[OfflineQueue] Queued audit event: \(entry.action)") }
+    func flushQueueIfNeeded() { print("[OfflineQueue] Flushing queued incidents to Console") }
 }
 
 // MARK: - Watermark Settings View
@@ -349,7 +345,6 @@ struct WatermarkSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Watermark Settings").font(.headline).padding(.top, 16)
-
             // Mode selector
             VStack(alignment: .leading, spacing: 8) {
                 Text("Watermark Mode").font(.subheadline.bold())
@@ -365,7 +360,6 @@ struct WatermarkSettingsView: View {
                     watermarkManager.updateConfig(config)
                 }
             }
-
             if selectedMode != .disabled {
                 // Status
                 HStack(spacing: 8) {
@@ -375,9 +369,7 @@ struct WatermarkSettingsView: View {
                     Text(watermarkManager.isActive ? "Watermark Active" : "Watermark Inactive")
                         .font(.caption).foregroundColor(.secondary)
                 }
-
                 Divider()
-
                 // Content options
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Watermark Content").font(.subheadline.bold())
@@ -419,9 +411,7 @@ struct WatermarkSettingsView: View {
                             }
                     }
                 }
-
                 Divider()
-
                 // Appearance
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Appearance").font(.subheadline.bold())
@@ -446,16 +436,13 @@ struct WatermarkSettingsView: View {
                         Text("\(Int(fontSize))pt").font(.caption).frame(width: 40)
                     }
                 }
-
                 Divider()
-
                 // Target Applications (Application mode)
                 if selectedMode == .applicationWatermark {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Target Applications").font(.subheadline.bold())
                         Text("Select which applications will display the watermark overlay.")
                             .font(.caption).foregroundColor(.secondary)
-
                         ForEach(targetApps.indices, id: \.self) { index in
                             HStack {
                                 Toggle(isOn: $targetApps[index].enabled) {
@@ -474,9 +461,7 @@ struct WatermarkSettingsView: View {
                                 .toggleStyle(.switch)
                             }
                         }
-
                         Divider()
-
                         HStack {
                             TextField("Add custom app (bundle ID)", text: $newAppBundleID)
                                 .textFieldStyle(.roundedBorder)
