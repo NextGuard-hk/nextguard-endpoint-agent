@@ -9,6 +9,7 @@
 import Foundation
 import CryptoKit
 import os.log
+import AppKit
 
 // MARK: - URL Threat Classification
 enum URLThreatLevel: String, Codable, CaseIterable {
