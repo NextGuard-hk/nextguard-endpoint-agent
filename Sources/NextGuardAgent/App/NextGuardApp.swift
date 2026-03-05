@@ -74,13 +74,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("[OK] USB device monitoring started")
 
         // Start AirDrop monitoring
-        AirDropMonitor.shared.startMonitoring()
-        print("[OK] AirDrop monitoring started")
+                AirDropMonitor.shared.startMonitoring()
+                print("[OK] AirDrop monitoring started")
 
         // Start print monitoring
         PrintMonitor.shared.startMonitoring()
         print("[OK] Print monitoring started")
-
         // Start email monitoring
         EmailMonitor.shared.startMonitoring()
         print("[OK] Email monitoring started")
@@ -96,6 +95,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start browser monitoring
         BrowserMonitor.shared.startMonitoring()
         print("[OK] Browser monitoring started")
+
+                // Start watermark (if configured)
+        WatermarkManager.shared.loadConfig()
+        WatermarkManager.shared.startWatermark()
+        print("[OK] Watermark manager initialized")
 
         // Async initialization
         Task {
