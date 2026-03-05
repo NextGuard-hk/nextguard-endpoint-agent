@@ -322,6 +322,43 @@ final class URLSecurityScanner: ObservableObject {
         recordResult(result)
         logger.info("[URLSecurity] Scanned \(domain): \(threatLevel.rawValue) (score: \(riskScore))")
         return result
+
+            // MARK: - Scan with Threat Intelligence
+
+    func scanURLWithThreatIntel(_ urlString: String) async -> URLScanResult {
+        // First run local heuristic scan
+        var result = scanURL(urlString)
+
+        // If local scan says safe or suspicious, also check threat intelligence
+        if result.threatLevel == .safe || result.threatLevel == .suspicious {
+            let tiResult = await ThreatIntelligenceService.shared.checkURL(urlString)
+            if case .malicious(_, _, let types, let confidence, let tiDetails) = tiResult {
+                // Threat intelligence found a match - upgrade threat level
+                var newDetails = result.details
+                newDetails.append("Threat Intelligence: \(types.joined(separator: ", "))")
+                newDetails.append("TI Details: \(tiDetails)")
+                let newScore = max(result.riskScore, Int(confidence * 100))
+                let newLevel: URLThreatLevel = newScore >= 70 ? .dangerous : .suspicious
+                var newCategories = result.categories
+                if !newCategories.contains(.malware) { newCategories.append(.malware) }
+                result = URLScanResult(
+                    url: result.url,
+                    domain: result.domain,
+                    threatLevel: newLevel,
+                    categories: newCategories,
+                    riskScore: newScore,
+                    details: newDetails,
+                    sslValid: result.sslValid,
+                    redirectCount: result.redirectCount
+                )
+                threatsDetected += 1
+                recordResult(result)
+                logger.warning("[URLSecurity] TI flagged \(result.domain): \(newLevel.rawValue) (score: \(newScore))")
+            }
+        }
+
+        return result
+    }
     }
 
     // MARK: - Detection Helpers
