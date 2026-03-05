@@ -218,7 +218,8 @@ final class DLPPolicyEngine {
 
     // MARK: - Content Scanning (Core DLP Function)
     func scanContent(_ content: String, channel: DLPChannel, filePath: String? = nil, processName: String? = nil) -> [DLPScanResult] {
-        var results: [DLPScanResult] = []         print("[DLPEngine] scan: \(activePolicies.count) policies, ch=\(channel.rawValue)")
+                var results: [DLPScanResult] = []
+        print("[DLPEngine] scan: \(activePolicies.count) policies, ch=\(channel.rawValue)")
         policyQueue.sync {
             for rule in activePolicies where rule.enabled && rule.channels.contains(channel) {
                 var matches: [DLPMatch] = []
