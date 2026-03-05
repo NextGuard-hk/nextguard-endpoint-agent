@@ -78,6 +78,7 @@ struct URLSecuritySettingsView: View {
 
             // Tabs: History / Whitelist / Blacklist
             Picker("", selection: $selectedTab) {
+                            Text("Threat Intel").tag(3)
                 Text("Scan History").tag(0)
                 Text("Whitelist").tag(1)
                 Text("Blacklist").tag(2)
@@ -85,6 +86,8 @@ struct URLSecuritySettingsView: View {
             .pickerStyle(.segmented)
 
             if selectedTab == 0 {
+                        } else if selectedTab == 3 {
+            threatIntelView
                 historyView
             } else if selectedTab == 1 {
                 whitelistView
@@ -287,5 +290,102 @@ struct URLSecuritySettingsView: View {
         case .dangerous: return .red
         case .blocked: return .purple
         }
+    }
+    
+    // MARK: - Threat Intelligence Settings View
+
+    @StateObject private var tiService = ThreatIntelligenceService.shared
+
+    private var threatIntelView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // TI Enable Toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Threat Intelligence").font(.subheadline.bold())
+                    Text("Query external threat databases for enterprise-grade URL protection")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $tiService.isEnabled).toggleStyle(.switch)
+            }
+
+            if tiService.isEnabled {
+                Divider()
+
+                // Stats row
+                HStack(spacing: 12) {
+                    tiStatCard("Providers", "\(tiService.enabledProviders.count)", "server.rack", .blue)
+                    tiStatCard("Queries", "\(tiService.totalQueriesCount)", "arrow.up.arrow.down", .teal)
+                    tiStatCard("Threats", "\(tiService.threatsFoundCount)", "shield.lefthalf.filled", .red)
+                }
+
+                Divider()
+
+                // Provider List
+                Text("Intelligence Providers").font(.caption.bold()).foregroundColor(.secondary)
+
+                ForEach(tiService.providers) { provider in
+                    HStack(spacing: 10) {
+                        Image(systemName: provider.isEnabled ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(provider.isEnabled ? .green : .secondary)
+                            .font(.system(size: 14))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(provider.name).font(.system(size: 12, weight: .medium))
+                            Text(provider.description).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        if provider.requiresAPIKey {
+                            Image(systemName: provider.apiKey.isEmpty ? "key.slash" : "key.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(provider.apiKey.isEmpty ? .orange : .green)
+                        } else {
+                            Text("Free").font(.system(size: 9)).foregroundColor(.green)
+                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(Capsule().fill(Color.green.opacity(0.15)))
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+                }
+
+                Divider()
+
+                // Cache settings
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Result Cache").font(.caption.bold())
+                        Text("Cache TI results to reduce API calls")
+                            .font(.system(size: 9)).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button("Clear Cache") {
+                        tiService.clearCache()
+                    }
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                }
+
+                // Timeout setting
+                HStack {
+                    Text("Query Timeout").font(.caption)
+                    Spacer()
+                    Text("\(Int(tiService.queryTimeout))s")
+                        .font(.caption.bold())
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private func tiStatCard(_ title: String, _ value: String, _ icon: String, _ color: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 14)).foregroundColor(color)
+            Text(value).font(.subheadline.bold()).foregroundColor(color)
+            Text(title).font(.system(size: 9)).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.08)))
     }
 }
