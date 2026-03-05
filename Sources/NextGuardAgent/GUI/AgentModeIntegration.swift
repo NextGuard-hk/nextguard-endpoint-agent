@@ -177,7 +177,9 @@ struct AgentSettingsContentView: View {
                         .foregroundColor(active ? .green : .secondary)
                 }
                 .padding(.vertical, 4)
-                if title != "URL Security" { Divider() }
+                if title != "URL Security" {
+                    Divider()
+                }
             }
             if modeManager.managedSettingsLocked {
                 HStack(spacing: 6) {
@@ -337,4 +339,166 @@ class OfflineQueueManager {
     func enterOfflineMode() { print("[OfflineQueue] Entered offline mode - caching incidents locally") }
     func enqueueAuditEvent(_ entry: TamperAuditEntry) { print("[OfflineQueue] Queued audit event: \(entry.action)") }
     func flushQueueIfNeeded() { print("[OfflineQueue] Flushing queued incidents to Console") }
+}
+
+// MARK: - Watermark Settings View
+struct WatermarkSettingsView: View {
+    @StateObject private var watermarkManager = WatermarkManager.shared
+    @State private var selectedMode: WatermarkMode = .disabled
+    @State private var showUsername = true
+    @State private var showHostname = true
+    @State private var showTimestamp = false
+    @State private var customText = ""
+    @State private var showCustomText = false
+    @State private var opacity: Double = 0.08
+    @State private var fontSize: Double = 18
+    @State private var targetApps: [TargetApp] = TargetApp.defaultApps
+    @State private var newAppBundleID: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Watermark Settings").font(.headline).padding(.top, 16)
+            // Mode selector
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Watermark Mode").font(.subheadline.bold())
+                Picker("Mode", selection: $selectedMode) {
+                    ForEach(WatermarkMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: selectedMode) { newMode in
+                    var config = watermarkManager.config
+                    config.mode = newMode
+                    watermarkManager.updateConfig(config)
+                }
+            }
+            if selectedMode != .disabled {
+                // Status
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(watermarkManager.isActive ? Color.green : Color.orange)
+                        .frame(width: 8, height: 8)
+                    Text(watermarkManager.isActive ? "Watermark Active" : "Watermark Inactive")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Divider()
+                // Content options
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Watermark Content").font(.subheadline.bold())
+                    Toggle("Show Username", isOn: $showUsername)
+                        .toggleStyle(.switch)
+                        .onChange(of: showUsername) { val in
+                            var config = watermarkManager.config
+                            config.showUsername = val
+                            watermarkManager.updateConfig(config)
+                        }
+                    Toggle("Show Hostname", isOn: $showHostname)
+                        .toggleStyle(.switch)
+                        .onChange(of: showHostname) { val in
+                            var config = watermarkManager.config
+                            config.showHostname = val
+                            watermarkManager.updateConfig(config)
+                        }
+                    Toggle("Show Timestamp", isOn: $showTimestamp)
+                        .toggleStyle(.switch)
+                        .onChange(of: showTimestamp) { val in
+                            var config = watermarkManager.config
+                            config.showTimestamp = val
+                            watermarkManager.updateConfig(config)
+                        }
+                    Toggle("Custom Text", isOn: $showCustomText)
+                        .toggleStyle(.switch)
+                        .onChange(of: showCustomText) { val in
+                            var config = watermarkManager.config
+                            config.showCustomText = val
+                            watermarkManager.updateConfig(config)
+                        }
+                    if showCustomText {
+                        TextField("Enter custom watermark text", text: $customText)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                var config = watermarkManager.config
+                                config.customText = customText
+                                watermarkManager.updateConfig(config)
+                            }
+                    }
+                }
+                Divider()
+                // Appearance
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Appearance").font(.subheadline.bold())
+                    HStack {
+                        Text("Opacity").font(.caption)
+                        Slider(value: $opacity, in: 0.02...0.3, step: 0.02)
+                            .onChange(of: opacity) { val in
+                                var config = watermarkManager.config
+                                config.opacity = CGFloat(val)
+                                watermarkManager.updateConfig(config)
+                            }
+                        Text(String(format: "%.0f%%", opacity * 100)).font(.caption).frame(width: 40)
+                    }
+                    HStack {
+                        Text("Font Size").font(.caption)
+                        Slider(value: $fontSize, in: 12...36, step: 2)
+                            .onChange(of: fontSize) { val in
+                                var config = watermarkManager.config
+                                config.fontSize = CGFloat(val)
+                                watermarkManager.updateConfig(config)
+                            }
+                        Text("\(Int(fontSize))pt").font(.caption).frame(width: 40)
+                    }
+                }
+                Divider()
+                // Target Applications (Application mode)
+                if selectedMode == .applicationWatermark {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Target Applications").font(.subheadline.bold())
+                        Text("Select which applications will display the watermark overlay.")
+                            .font(.caption).foregroundColor(.secondary)
+                        ForEach(targetApps.indices, id: \.self) { index in
+                            HStack {
+                                Toggle(isOn: $targetApps[index].enabled) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: targetApps[index].icon)
+                                            .frame(width: 20)
+                                            .foregroundColor(targetApps[index].enabled ? .blue : .secondary)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(targetApps[index].name)
+                                                .font(.system(size: 12, weight: .medium))
+                                            Text(targetApps[index].bundleID)
+                                                .font(.system(size: 10)).foregroundColor(.secondary)
+                                        }
+                                    }
+                                }
+                                .toggleStyle(.switch)
+                            }
+                        }
+                        Divider()
+                        HStack {
+                            TextField("Add custom app (bundle ID)", text: $newAppBundleID)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Add") {
+                                if !newAppBundleID.isEmpty {
+                                    targetApps.append(TargetApp(name: newAppBundleID, bundleID: newAppBundleID, icon: "app.fill", enabled: true))
+                                    newAppBundleID = ""
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .onAppear {
+            selectedMode = watermarkManager.config.mode
+            showUsername = watermarkManager.config.showUsername
+            showHostname = watermarkManager.config.showHostname
+            showTimestamp = watermarkManager.config.showTimestamp
+            showCustomText = watermarkManager.config.showCustomText
+            customText = watermarkManager.config.customText
+            opacity = Double(watermarkManager.config.opacity)
+            fontSize = Double(watermarkManager.config.fontSize)
+        }
+    }
 }
