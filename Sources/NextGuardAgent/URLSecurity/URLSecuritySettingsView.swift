@@ -276,6 +276,80 @@ struct URLSecuritySettingsView: View {
             if scanner.blacklistedDomains.isEmpty {
                 Text("No blacklisted domains.").font(.caption).foregroundColor(.secondary)
             }
+
+                        // MARK: - Threat Intelligence Settings
+            GroupBox(label: Label("Threat Intelligence", systemImage: "network.badge.shield.half.filled")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Configure external threat intelligence providers for enhanced URL scanning.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    // Google Safe Browsing
+                    GroupBox("Google Safe Browsing") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SecureField("API Key", text: Binding(
+                                get: { UserDefaults.standard.string(forKey: "threatIntel.googleSafeBrowsing.apiKey") ?? "" },
+                                set: { UserDefaults.standard.set($0, forKey: "threatIntel.googleSafeBrowsing.apiKey") }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            Text("Get a free API key from Google Cloud Console")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // VirusTotal
+                    GroupBox("VirusTotal") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SecureField("API Key", text: Binding(
+                                get: { UserDefaults.standard.string(forKey: "threatIntel.virusTotal.apiKey") ?? "" },
+                                set: { UserDefaults.standard.set($0, forKey: "threatIntel.virusTotal.apiKey") }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            Text("Free tier: 4 requests/min. Get key from virustotal.com")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // URLhaus
+                    GroupBox("URLhaus (abuse.ch)") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("Enable URLhaus", isOn: Binding(
+                                get: { UserDefaults.standard.bool(forKey: "threatIntel.urlhaus.enabled") },
+                                set: { UserDefaults.standard.set($0, forKey: "threatIntel.urlhaus.enabled") }
+                            ))
+                            Text("Free service, no API key required")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Reload providers button
+                    Button(action: {
+                        ThreatIntelligenceService.shared.loadProviders()
+                    }) {
+                        Label("Reload Providers", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    // Active providers status
+                    let providerCount = ThreatIntelligenceService.shared.activeProviderCount
+                    let providerNames = ThreatIntelligenceService.shared.activeProviderNames
+                    HStack {
+                        Image(systemName: providerCount > 0 ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                            .foregroundColor(providerCount > 0 ? .green : .orange)
+                        Text("\(providerCount) provider(s) active")
+                            .font(.caption)
+                        if !providerNames.isEmpty {
+                            Text("(\(providerNames.joined(separator: ", ")))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(8)
+            }
         }
     }
 
