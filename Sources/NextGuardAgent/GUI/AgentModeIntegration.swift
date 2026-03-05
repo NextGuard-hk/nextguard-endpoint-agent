@@ -121,6 +121,10 @@ struct AgentSettingsContentView: View {
                 ("envelope.fill", "Email", "Scan outgoing email attachments", true),
                 ("externaldrive.fill", "USB / Removable Media", "Block unauthorised transfers", true),
                 ("network", "Network Upload", "Monitor web uploads and cloud sync", true),
+                                ("airplayaudio", "AirDrop", "Monitor AirDrop file transfers", true),
+                ("doc.fill", "File System", "Monitor file operations and movements", true),
+                ("camera.fill", "Screen Capture", "Detect and audit screenshots", true),
+                ("globe", "Browser", "Monitor browser uploads and downloads", true),
                 ("printer.fill", "Print", "Audit print-to-file operations", false),
             ]
 
