@@ -9,6 +9,28 @@
 
 import SwiftUI
 
+// MARK: - TargetApp model for Application watermark mode
+struct TargetApp: Identifiable {
+    let id = UUID()
+    var name: String
+    var bundleID: String
+    var icon: String
+    var enabled: Bool
+
+    static let defaultApps: [TargetApp] = [
+        TargetApp(name: "Microsoft Word", bundleID: "com.microsoft.Word", icon: "doc.text.fill", enabled: true),
+        TargetApp(name: "Microsoft Excel", bundleID: "com.microsoft.Excel", icon: "tablecells.fill", enabled: true),
+        TargetApp(name: "Microsoft PowerPoint", bundleID: "com.microsoft.PowerPoint", icon: "rectangle.fill.on.rectangle.fill", enabled: true),
+        TargetApp(name: "Pages", bundleID: "com.apple.iWork.Pages", icon: "doc.richtext.fill", enabled: true),
+        TargetApp(name: "Numbers", bundleID: "com.apple.iWork.Numbers", icon: "tablecells", enabled: true),
+        TargetApp(name: "Keynote", bundleID: "com.apple.iWork.Keynote", icon: "play.rectangle.fill", enabled: true),
+        TargetApp(name: "Preview", bundleID: "com.apple.Preview", icon: "eye.fill", enabled: false),
+        TargetApp(name: "TextEdit", bundleID: "com.apple.TextEdit", icon: "note.text", enabled: false),
+        TargetApp(name: "Safari", bundleID: "com.apple.Safari", icon: "safari.fill", enabled: false),
+        TargetApp(name: "Google Chrome", bundleID: "com.google.Chrome", icon: "globe", enabled: false),
+    ]
+}
+
 // MARK: - Agent-Mode-Aware Settings Content View
 // Replaces AgentSettingsContentView() in MainWindowController detailView
 struct AgentSettingsContentView: View {
@@ -81,8 +103,7 @@ struct AgentSettingsContentView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(selectedSection == section ?
-                Color.accentColor.opacity(0.12) : Color.clear)
+            .background(selectedSection == section ? Color.accentColor.opacity(0.12) : Color.clear)
             .cornerRadius(6)
         }
         .buttonStyle(.plain)
@@ -110,8 +131,7 @@ struct AgentSettingsContentView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(Capsule().fill(
-            isManaged ?
-            Color.blue.opacity(0.12) : Color.green.opacity(0.12)
+            isManaged ? Color.blue.opacity(0.12) : Color.green.opacity(0.12)
         ))
     }
 
@@ -119,6 +139,7 @@ struct AgentSettingsContentView: View {
     private var monitoringSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Monitoring Channels").font(.headline).padding(.top, 16)
+
             let channels: [(String, String, String, Bool)] = [
                 ("clipboard.fill", "Clipboard", "Monitor copy/paste operations", true),
                 ("envelope.fill", "Email", "Scan outgoing email attachments", true),
@@ -131,6 +152,7 @@ struct AgentSettingsContentView: View {
                 ("printer.fill", "Print", "Audit print-to-file operations", false),
                 ("drop.fill", "Watermark", "On-screen watermark overlay", WatermarkManager.shared.config.mode != .disabled),
             ]
+
             ForEach(channels, id: \.1) { icon, title, subtitle, active in
                 HStack(spacing: 10) {
                     Image(systemName: icon)
@@ -153,6 +175,7 @@ struct AgentSettingsContentView: View {
                 .padding(.vertical, 4)
                 if title != "Watermark" { Divider() }
             }
+
             if modeManager.managedSettingsLocked {
                 HStack(spacing: 6) {
                     Image(systemName: "lock.fill").foregroundColor(.orange).font(.caption)
@@ -210,6 +233,7 @@ struct AgentSettingsContentView: View {
 struct AgentModeDashboardOverlay: View {
     @StateObject private var modeManager = AgentModeManager.shared
     @StateObject private var engine = LocalPolicyEngine.shared
+
     var body: some View {
         let isManaged = modeManager.mode == AgentMode.managed
         VStack(spacing: 12) {
@@ -243,9 +267,9 @@ struct AgentModeDashboardOverlay: View {
                 isManaged ? Color.blue.opacity(0.06) : Color.green.opacity(0.06)
             ))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-                isManaged ? Color.blue.opacity(0.15) : Color.green.opacity(0.15),
-                lineWidth: 1
+                isManaged ? Color.blue.opacity(0.15) : Color.green.opacity(0.15), lineWidth: 1
             ))
+
             HStack(spacing: 16) {
                 miniStat("Local Rules", "\(engine.localRules.count)", .blue)
                 miniStat("Server Rules", "\(engine.serverRules.count)", .purple)
@@ -254,6 +278,7 @@ struct AgentModeDashboardOverlay: View {
             }
         }
     }
+
     private func miniStat(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(spacing: 4) {
             Text(value).font(.headline).foregroundColor(color)
@@ -268,6 +293,7 @@ struct AgentModeDashboardOverlay: View {
 // MARK: - Sidebar Agent Mode Badge
 struct SidebarAgentBadge: View {
     @StateObject private var modeManager = AgentModeManager.shared
+
     var body: some View {
         let isManaged = modeManager.mode == AgentMode.managed
         VStack(spacing: 4) {
@@ -317,6 +343,8 @@ struct WatermarkSettingsView: View {
     @State private var showCustomText = false
     @State private var opacity: Double = 0.08
     @State private var fontSize: Double = 18
+    @State private var targetApps: [TargetApp] = TargetApp.defaultApps
+    @State private var newAppBundleID: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -416,6 +444,49 @@ struct WatermarkSettingsView: View {
                                 watermarkManager.updateConfig(config)
                             }
                         Text("\(Int(fontSize))pt").font(.caption).frame(width: 40)
+                    }
+                }
+
+                Divider()
+
+                // Target Applications (Application mode)
+                if selectedMode == .application {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Target Applications").font(.subheadline.bold())
+                        Text("Select which applications will display the watermark overlay.")
+                            .font(.caption).foregroundColor(.secondary)
+
+                        ForEach(targetApps.indices, id: \.self) { index in
+                            HStack {
+                                Toggle(isOn: $targetApps[index].enabled) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: targetApps[index].icon)
+                                            .frame(width: 20)
+                                            .foregroundColor(targetApps[index].enabled ? .blue : .secondary)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(targetApps[index].name)
+                                                .font(.system(size: 12, weight: .medium))
+                                            Text(targetApps[index].bundleID)
+                                                .font(.system(size: 10)).foregroundColor(.secondary)
+                                        }
+                                    }
+                                }
+                                .toggleStyle(.switch)
+                            }
+                        }
+
+                        Divider()
+
+                        HStack {
+                            TextField("Add custom app (bundle ID)", text: $newAppBundleID)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Add") {
+                                if !newAppBundleID.isEmpty {
+                                    targetApps.append(TargetApp(name: newAppBundleID, bundleID: newAppBundleID, icon: "app.fill", enabled: true))
+                                    newAppBundleID = ""
+                                }
+                            }
+                        }
                     }
                 }
             }
