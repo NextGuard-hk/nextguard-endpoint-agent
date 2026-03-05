@@ -136,12 +136,14 @@ final class DLPPolicyEngine {
                 enabled: true, complianceFramework: "GDPR")
     ]
 
-    private init() {         activePolicies = builtInRules         precompileRegexes()         print("[DLPEngine] Initialized with \(builtInRules.count) built-in rules")     }
+    private init() {
+                activePolicies = builtInRules
+                precompileRegexes()
+            }
 
     // MARK: - Policy Loading (from Console API response)
     func loadPoliciesFromConsole(_ remotePolicies: [[String: Any]]) {
         var parsed: [DLPRule] = []
-        for dict in remotePolicies {
             guard let id = dict["id"] as? String,
                   let name = dict["name"] as? String,
                   let enabled = dict["enabled"] as? Bool,
