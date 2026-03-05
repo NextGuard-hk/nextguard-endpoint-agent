@@ -69,6 +69,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         FileSystemWatcher.shared.startWatching()
         print("[OK] File system monitoring started")
 
+                // Start USB device monitoring
+        USBDeviceMonitor.shared.startMonitoring()
+        print("[OK] USB device monitoring started")
+
+        // Start AirDrop monitoring
+        AirDropMonitor.shared.startMonitoring()
+        print("[OK] AirDrop monitoring started")
+
+        // Start print monitoring
+        PrintMonitor.shared.startMonitoring()
+        print("[OK] Print monitoring started")
+
+        // Start email monitoring
+        EmailMonitor.shared.startMonitoring()
+        print("[OK] Email monitoring started")
+
+        // Start network monitoring
+        NetworkMonitor.shared.startMonitoring()
+        print("[OK] Network monitoring started")
+
+        // Start screen capture monitoring
+        ScreenCaptureMonitor.shared.startMonitoring()
+        print("[OK] Screen capture monitoring started")
+
+        // Start browser monitoring
+        BrowserMonitor.shared.startMonitoring()
+        print("[OK] Browser monitoring started")
+
         // Async initialization
         Task {
             if mgmtClient.tenantId == nil {
@@ -134,6 +162,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("[OK] NextGuard DLP Agent shutting down")
         ClipboardMonitor.shared.stopMonitoring()
         FileSystemWatcher.shared.stopWatching()
+                USBDeviceMonitor.shared.stopMonitoring()
+        AirDropMonitor.shared.stopMonitoring()
+        PrintMonitor.shared.stopMonitoring()
+        EmailMonitor.shared.stopMonitoring()
+        NetworkMonitor.shared.stopMonitoring()
+        ScreenCaptureMonitor.shared.stopMonitoring()
+        BrowserMonitor.shared.stopMonitoring()
         mgmtClient.stopHeartbeat()
         policyEngine.stopPolicyRefresh()
     }
