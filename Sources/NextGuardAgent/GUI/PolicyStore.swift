@@ -81,7 +81,7 @@ struct AgentStatusInfo: Codable {
             totalIncidentsToday: 0,
             blockedToday: 0,
             auditedToday: 0,
-            agentVersion: "1.0.0",
+            agentVersion: "2.0.0",
             tenantId: nil,
             consoleUrl: "https://next-guard.com"
         )
