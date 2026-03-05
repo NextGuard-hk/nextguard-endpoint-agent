@@ -151,7 +151,7 @@ struct AgentSettingsContentView: View {
                         .foregroundColor(active ? .green : .secondary)
                 }
                 .padding(.vertical, 4)
-                if title != "Print" { Divider() }
+                if title != "Watermark" { Divider() }
             }
 
             if modeManager.managedSettingsLocked {
@@ -390,8 +390,7 @@ struct WatermarkSettingsView: View {
                             config.showTimestamp = val
                             watermarkManager.updateConfig(config)
                         }
-                    Toggle("Custom Text", isOn: $showCustomText)
-                        .toggleStyle(.switch)
+title != "Watermark"                        .toggleStyle(.switch)
                         .onChange(of: showCustomText) { val in
                             var config = watermarkManager.config
                             config.showCustomText = val
@@ -416,8 +415,7 @@ struct WatermarkSettingsView: View {
                     HStack {
                         Text("Opacity").font(.caption)
                         Slider(value: $opacity, in: 0.02...0.3, step: 0.02)
-                            .onChange(of: opacity) { val in
-                                var config = watermarkManager.config
+title != "Watermark"                                var config = watermarkManager.config
                                 config.opacity = CGFloat(val)
                                 watermarkManager.updateConfig(config)
                             }
