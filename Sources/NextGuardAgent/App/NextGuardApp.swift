@@ -142,7 +142,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("[OK] \(count) policies loaded from console")
                 GUIManager.shared.updatePolicyCount(count, source: "remote")
             } else {
-                policyEngine.loadPolicies()
+                await policyEngine.loadPolicies()
                 let count = policyEngine.activePolicies.count
                 updatePoliciesStatus("Policies: \(count) rules (local)")
                 print("[OK] \(count) policies loaded locally")
