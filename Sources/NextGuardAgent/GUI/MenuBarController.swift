@@ -48,8 +48,8 @@ final class MenuBarController: NSObject, ObservableObject {
     if let button = statusItem?.button {
       button.image = NSImage(systemSymbolName: "shield.checkmark.fill", accessibilityDescription: "NextGuard DLP")
       button.image?.size = NSSize(width: 18, height: 18)
-      button.image?.isTemplate = true
-      // contentTintColor removed for template rendering
+      button.image?.isTemplate = false
+      button.image = button.image?.tinted(with: .white)
       button.action = #selector(handleStatusItemClick(_:))
       button.target = self
       button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -204,8 +204,8 @@ final class MenuBarController: NSObject, ObservableObject {
     if let button = statusItem?.button {
       let iconName = connectionStatus.icon
       button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "NextGuard DLP - \(connectionStatus.rawValue)")
-      button.image?.isTemplate = true
-      // contentTintColor removed for template rendering
+      button.image?.isTemplate = false
+      button.image = button.image?.tinted(with: .white)
     }
   }
   private func showIncidentBadge() {
@@ -237,5 +237,19 @@ final class MenuBarController: NSObject, ObservableObject {
     content.sound = isBlocked ? UNNotificationSound.default : nil
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+  }
+}
+
+// MARK: - NSImage Tinting Extension
+extension NSImage {
+  func tinted(with color: NSColor) -> NSImage {
+    let image = self.copy() as! NSImage
+    image.lockFocus()
+    color.set()
+    let imageRect = NSRect(origin: .zero, size: image.size)
+    imageRect.fill(using: .sourceAtop)
+    image.unlockFocus()
+    image.isTemplate = false
+    return image
   }
 }
