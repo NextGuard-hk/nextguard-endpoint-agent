@@ -214,7 +214,7 @@ final class EmailMonitor: @unchecked Sendable {
         var sender = ""
         var recipients: [String] = []
         var cc: [String] = []
-        var bcc: [String] = []
+        let bcc: [String] = []
         var subject = ""
         var bodyStart = false
         var body = ""
