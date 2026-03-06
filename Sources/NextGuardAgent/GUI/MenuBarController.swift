@@ -8,6 +8,7 @@
 import Cocoa
 import Combine
 import SwiftUI
+import UserNotifications
 // MARK: - Menu Bar Controller
 final class MenuBarController: NSObject, ObservableObject {
   private var statusItem: NSStatusItem?
@@ -230,10 +231,10 @@ final class MenuBarController: NSObject, ObservableObject {
   }
   // MARK: - Notifications
   func showNotification(title: String, body: String, isBlocked: Bool = false) {
-    let notification = NSUserNotification()
-    notification.title = title
-    notification.informativeText = body
-    notification.soundName = isBlocked ? NSUserNotificationDefaultSoundName : nil
+    let content = UNMutableNotificationContent()()
+    content.title = title
+    content.body = body
+    content.sound = isBlocked ? UNNotificationSound.default : nil
     NSUserNotificationCenter.default.deliver(notification)
   }
 }
