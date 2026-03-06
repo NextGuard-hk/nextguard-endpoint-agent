@@ -207,6 +207,8 @@ final class MenuBarController: NSObject, ObservableObject {
       let iconName = connectionStatus.icon
       button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "NextGuard DLP - \(connectionStatus.rawValue)")
       button.image?.isTemplate = false
+            let config = NSImage.SymbolConfiguration(hierarchicalColor: .white)
+            button.image = button.image?.withSymbolConfiguration(config)
 
     }
   }
