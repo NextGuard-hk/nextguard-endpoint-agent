@@ -71,7 +71,6 @@ final class NetworkMonitor: ObservableObject {
       }
       
       let config = NEFilterProviderConfiguration()
-      config.filterBrowsers = true
       config.filterSockets = true
       config.filterPackets = false
       config.organization = "NextGuard Technology"
