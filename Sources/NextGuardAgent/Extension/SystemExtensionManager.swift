@@ -138,7 +138,7 @@ final class PrintAirDropMonitor: ObservableObject {
   private func monitorPrintQueue() {
     // Watch CUPS spool directory
     let spoolPath = "/var/spool/cups"
-    let watcher = FileSystemWatcher.shared
+    let _ = FileSystemWatcher.shared
     // Leverage FSEvents for spool directory changes
     logger.info("Print queue monitoring via CUPS spool at \(spoolPath)")
   }
