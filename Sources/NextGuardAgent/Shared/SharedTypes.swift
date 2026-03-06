@@ -103,7 +103,7 @@ private struct AboutSettingsTab: View {
                 .font(.system(size: 48))
             Text("NextGuard Endpoint DLP Agent")
                 .font(.title2)
-            Text("Version 1.0.0")
+            Text("Version 2.3.0")
                 .foregroundColor(.secondary)
             Text("Copyright (c) 2026 NextGuard Technology Limited")
                 .font(.caption)
