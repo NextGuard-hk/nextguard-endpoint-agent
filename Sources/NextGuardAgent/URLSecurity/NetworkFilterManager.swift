@@ -5,7 +5,7 @@
 // Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 // Network Filter Manager - DNS-level URL blocking for blacklisted domains
 // Uses /etc/hosts modification + NEFilterManager for enterprise URL filtering
-// FIX: Persist filter state across launches; auto-enable on init if previously enabled
+// FIX: Persist filter state across launches; auto-restore on init
 //
 
 import Foundation
@@ -60,7 +60,7 @@ final class NetworkFilterManager: ObservableObject {
 
     private init() {
         loadBlockedDomains()
-        syncWithScanner()
+        syncBlacklistWithScanner()
         // Restore filter state from UserDefaults
         let savedEnabled = UserDefaults.standard.bool(forKey: filterEnabledKey)
         if savedEnabled {
@@ -71,26 +71,13 @@ final class NetworkFilterManager: ObservableObject {
         }
     }
 
-    // MARK: - Sync with URLSecurityScanner blacklist
-    private func syncWithScanner() {
+    // MARK: - Sync blacklist with URLSecurityScanner
+    private func syncBlacklistWithScanner() {
         let scanner = URLSecurityScanner.shared
-        // Observe blacklist changes
         scanner.$blacklistedDomains
             .receive(on: DispatchQueue.main)
             .sink { [weak self] domains in
                 self?.updateBlockedDomains(Set(domains))
-            }
-            .store(in: &cancellables)
-        // Observe scanner DNS filter toggle
-        scanner.$isDNSFilterEnabled
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] enabled in
-                guard let self = self else { return }
-                if enabled && !self.isFilterEnabled {
-                    self.enableFilter()
-                } else if !enabled && self.isFilterEnabled {
-                    self.disableFilter()
-                }
             }
             .store(in: &cancellables)
     }
@@ -102,7 +89,7 @@ final class NetworkFilterManager: ObservableObject {
         blockedDomains = domains
         saveBlockedDomains()
         if !newDomains.isEmpty || !removedDomains.isEmpty {
-            applyDNSBlocking()
+            if isFilterEnabled { applyDNSBlocking() }
             logger.info("[Filter] Updated: +\(newDomains.count) -\(removedDomains.count) domains. Total: \(domains.count)")
         }
     }
@@ -153,21 +140,15 @@ final class NetworkFilterManager: ObservableObject {
                 appleScript?.executeAndReturnError(&error)
                 if let error = error {
                     logger.error("[Filter] Failed to apply DNS blocking: \(error)")
-                    DispatchQueue.main.async {
-                        self.filterStatus = .error
-                    }
+                    DispatchQueue.main.async { self.filterStatus = .error }
                 } else {
                     try? FileManager.default.removeItem(atPath: tempPath)
                     logger.info("[Filter] DNS blocking applied: \(self.blockedDomains.count) domains")
-                    DispatchQueue.main.async {
-                        self.filterStatus = .active
-                    }
+                    DispatchQueue.main.async { self.filterStatus = .active }
                 }
             } catch {
                 logger.error("[Filter] DNS blocking error: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self.filterStatus = .error
-                }
+                DispatchQueue.main.async { self.filterStatus = .error }
             }
         }
     }
@@ -184,9 +165,7 @@ final class NetworkFilterManager: ObservableObject {
                 var error: NSDictionary?
                 appleScript?.executeAndReturnError(&error)
                 try? FileManager.default.removeItem(atPath: tempPath)
-                DispatchQueue.main.async {
-                    self.filterStatus = .disabled
-                }
+                DispatchQueue.main.async { self.filterStatus = .disabled }
                 logger.info("[Filter] DNS blocking removed")
             } catch {
                 logger.error("[Filter] Remove blocking error: \(error.localizedDescription)")
@@ -200,16 +179,12 @@ final class NetworkFilterManager: ObservableObject {
         var inBlock = false
         for line in lines {
             if line.trimmingCharacters(in: .whitespaces) == markerStart {
-                inBlock = true
-                continue
+                inBlock = true; continue
             }
             if line.trimmingCharacters(in: .whitespaces) == markerEnd {
-                inBlock = false
-                continue
+                inBlock = false; continue
             }
-            if !inBlock {
-                result.append(line)
-            }
+            if !inBlock { result.append(line) }
         }
         while result.last?.trimmingCharacters(in: .whitespaces).isEmpty == true {
             result.removeLast()
@@ -278,24 +253,21 @@ final class NetworkFilterManager: ObservableObject {
         logger.info("[Filter] Filter DISABLED")
     }
 
-    // MARK: - URL Check (called by browser monitor or scanner)
+    // MARK: - URL Check (called by URLSecuritySettingsView or scanner)
     func shouldBlockURL(_ urlString: String) -> Bool {
         guard isFilterEnabled else { return false }
         guard let url = URL(string: urlString.hasPrefix("http") ? urlString : "https://\(urlString)"),
               let host = url.host?.lowercased() else { return false }
-        // Check exact match
         if blockedDomains.contains(host) {
             recordBlock(domain: host)
             return true
         }
-        // Check parent domain match (e.g., sub.nba.com matches nba.com)
         for blocked in blockedDomains {
             if host.hasSuffix("." + blocked) || host == blocked {
                 recordBlock(domain: host)
                 return true
             }
         }
-        // Also check URLSecurityScanner scan result
         let scanResult = URLSecurityScanner.shared.scanURL(urlString)
         if scanResult.threatLevel == .blocked || scanResult.threatLevel == .dangerous {
             if URLSecurityScanner.shared.blockMode == .warnAndBlock || URLSecurityScanner.shared.blockMode == .silentBlock {
