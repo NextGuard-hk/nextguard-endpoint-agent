@@ -83,7 +83,7 @@ private struct GoogleSBProvider: ThreatProvider {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 10
         let body: [String: Any] = [
-            "client": ["clientId": "nextguard-agent", "clientVersion": "2.2.0"],
+            "client": ["clientId": "nextguard-agent", "clientVersion": "2.3.0"],
             "threatInfo": [
                 "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
                 "platformTypes": ["ANY_PLATFORM"],
