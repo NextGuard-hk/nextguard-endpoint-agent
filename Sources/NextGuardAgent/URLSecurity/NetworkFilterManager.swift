@@ -232,7 +232,6 @@ final class NetworkFilterManager: ObservableObject {
             }
 
             let filterConfig = NEFilterProviderConfiguration()
-            filterConfig.filterBrowsers = true
             filterConfig.filterSockets = true
             filterConfig.organization = "NextGuard Technology Limited"
 
