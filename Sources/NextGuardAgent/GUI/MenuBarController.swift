@@ -231,7 +231,7 @@ final class MenuBarController: NSObject, ObservableObject {
   }
   // MARK: - Notifications
   func showNotification(title: String, body: String, isBlocked: Bool = false) {
-    let content = UNMutableNotificationContent()()
+    let content = UNMutableNotificationContent()
     content.title = title
     content.body = body
     content.sound = isBlocked ? UNNotificationSound.default : nil
