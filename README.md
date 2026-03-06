@@ -77,11 +77,11 @@ cd nextguard-endpoint-agent
 ./Scripts/build-dmg.sh --sign "Developer ID Application: NextGuard Technology Limited" --notarize
 ```
 
-The build script produces a universal binary (arm64 + x86_64) DMG installer at `.build/NextGuardDLPAgent-1.0.0.dmg`.
+The build script produces a universal binary (arm64 + x86_64) DMG installer at `.build/NextGuardDLPAgent-2.3.0.dmg`.
 
 ## Installation
 
-1. Open `NextGuardDLPAgent-1.0.0.dmg`
+1. Open `NextGuardDLPAgent-2.3.0.dmg`
 2. Drag **NextGuard DLP Agent** to Applications
 3. Launch the app — approve System Extension in **System Settings > Privacy & Security**
 4. The agent runs as a menu bar app with real-time DLP protection
