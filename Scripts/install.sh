@@ -1,6 +1,6 @@
 #!/bin/bash
 # NextGuard Endpoint Agent - Post-Install Script
-# Copyright (c) 2024 NextGuard Technology. All rights reserved.
+# Copyright (c) 2026 NextGuard Technology. All rights reserved.
 # Executed by the DMG installer after file copy
 
 set -e
@@ -24,7 +24,7 @@ fi
 
 echo "================================================"
 echo "  NextGuard Endpoint Agent - Installer"
-echo "  Version 1.0.0"
+echo "  Version 2.3.0"
 echo "================================================"
 echo ""
 
