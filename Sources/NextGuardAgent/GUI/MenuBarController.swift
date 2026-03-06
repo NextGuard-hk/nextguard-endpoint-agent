@@ -27,7 +27,7 @@ final class MenuBarController: NSObject, ObservableObject {
     case error = "Error"
     var icon: String {
       switch self {
-      case .connected: return "shield.checkmark.fill"
+      case .connected: return "shield.checkered"
       case .disconnected: return "shield.slash"
       case .syncing: return "arrow.triangle.2.circlepath"
       case .error: return "exclamationmark.shield"
@@ -42,24 +42,12 @@ final class MenuBarController: NSObject, ObservableObject {
       }
     }
   }
-  // MARK: - White Icon Helper
-  private func createWhiteMenuBarIcon(symbolName: String) -> NSImage? {
-    guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: "NextGuard DLP") else { return nil }
-    let size = NSSize(width: 18, height: 18)
-    let image = NSImage(size: size, flipped: false) { rect in
-      NSColor.white.set()
-      symbol.draw(in: rect)
-      rect.fill(using: .sourceAtop)
-      return true
-    }
-    image.isTemplate = false
-    return image
-  }
   // MARK: - Setup
   func setupMenuBar() {
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     if let button = statusItem?.button {
-      button.image = createWhiteMenuBarIcon(symbolName: "shield.checkmark.fill")
+      button.image = NSImage(systemSymbolName: "shield.checkered", accessibilityDescription: "NextGuard DLP")
+      button.image?.size = NSSize(width: 18, height: 18)
       button.action = #selector(handleStatusItemClick(_:))
       button.target = self
       button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -212,7 +200,9 @@ final class MenuBarController: NSObject, ObservableObject {
   }
   private func updateMenuBarIcon() {
     if let button = statusItem?.button {
-      button.image = createWhiteMenuBarIcon(symbolName: connectionStatus.icon)
+      let iconName = connectionStatus.icon
+      button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "NextGuard DLP - \(connectionStatus.rawValue)")
+      button.image?.size = NSSize(width: 18, height: 18)
     }
   }
   private func showIncidentBadge() {
