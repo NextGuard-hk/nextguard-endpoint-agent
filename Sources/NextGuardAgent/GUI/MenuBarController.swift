@@ -48,8 +48,8 @@ final class MenuBarController: NSObject, ObservableObject {
     if let button = statusItem?.button {
       button.image = NSImage(systemSymbolName: "shield.checkmark.fill", accessibilityDescription: "NextGuard DLP")
       button.image?.size = NSSize(width: 18, height: 18)
-      button.image?.isTemplate = false
-      button.image = button.image?.tinted(with: .white)
+      button.image?.isTemplate = true
+
       button.action = #selector(handleStatusItemClick(_:))
       button.target = self
       button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -204,8 +204,8 @@ final class MenuBarController: NSObject, ObservableObject {
     if let button = statusItem?.button {
       let iconName = connectionStatus.icon
       button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "NextGuard DLP - \(connectionStatus.rawValue)")
-      button.image?.isTemplate = false
-      button.image = button.image?.tinted(with: .white)
+      button.image?.isTemplate = true
+
     }
   }
   private func showIncidentBadge() {
