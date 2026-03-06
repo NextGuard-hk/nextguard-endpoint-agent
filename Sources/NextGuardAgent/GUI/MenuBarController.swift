@@ -48,7 +48,7 @@ final class MenuBarController: NSObject, ObservableObject {
     if let button = statusItem?.button {
       button.image = NSImage(systemSymbolName: "shield.checkmark.fill", accessibilityDescription: "NextGuard DLP")
       button.image?.size = NSSize(width: 18, height: 18)
-      button.image?.isTemplate = false
+      button.image?.isTemplate = true
       button.contentTintColor = connectionStatus.color
       button.action = #selector(handleStatusItemClick(_:))
       button.target = self
@@ -204,7 +204,7 @@ final class MenuBarController: NSObject, ObservableObject {
     if let button = statusItem?.button {
       let iconName = connectionStatus.icon
       button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "NextGuard DLP - \(connectionStatus.rawValue)")
-      button.image?.isTemplate = false
+      button.image?.isTemplate = true
       button.contentTintColor = connectionStatus.color
     }
   }
