@@ -48,8 +48,8 @@ final class MenuBarController: NSObject, ObservableObject {
     if let button = statusItem?.button {
       button.image = NSImage(systemSymbolName: "shield.checkmark.fill", accessibilityDescription: "NextGuard DLP")
       button.image?.size = NSSize(width: 18, height: 18)
-      button.image?.isTemplate = true
-      button.contentTintColor = connectionStatus.color
+      button.image?.isTemplate = false
+      button.contentTintColor = .white
       button.action = #selector(handleStatusItemClick(_:))
       button.target = self
       button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -121,7 +121,7 @@ final class MenuBarController: NSObject, ObservableObject {
     let view = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 60))
     let iconView = NSImageView(frame: NSRect(x: 12, y: 12, width: 36, height: 36))
     iconView.image = NSImage(systemSymbolName: connectionStatus.icon, accessibilityDescription: nil)
-    iconView.contentTintColor = connectionStatus.color
+    iconView.contentTintColor = .white
     view.addSubview(iconView)
     let titleLabel = NSTextField(labelWithString: "NextGuard DLP Agent")
     titleLabel.frame = NSRect(x: 56, y: 32, width: 200, height: 18)
@@ -204,8 +204,8 @@ final class MenuBarController: NSObject, ObservableObject {
     if let button = statusItem?.button {
       let iconName = connectionStatus.icon
       button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "NextGuard DLP - \(connectionStatus.rawValue)")
-      button.image?.isTemplate = true
-      button.contentTintColor = connectionStatus.color
+      button.image?.isTemplate = false
+      button.contentTintColor = .white
     }
   }
   private func showIncidentBadge() {
