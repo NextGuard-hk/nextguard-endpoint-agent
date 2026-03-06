@@ -1,6 +1,6 @@
 #!/bin/bash
 # NextGuard Endpoint Agent - Uninstall Script
-# Copyright (c) 2024 NextGuard Technology. All rights reserved.
+# Copyright (c) 2026 NextGuard Technology. All rights reserved.
 # Usage: sudo ./uninstall.sh
 
 set -e
