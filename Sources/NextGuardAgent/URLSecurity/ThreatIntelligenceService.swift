@@ -5,612 +5,431 @@
 // Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 // Enterprise-grade Threat Intelligence Service - Multi-provider URL threat detection
 // Supports: Google Safe Browsing, VirusTotal, PhishTank, URLhaus, OpenPhish,
-//           AlienVault OTX, Cloudflare DNS filtering
+//           AlienVault OTX, Cloudflare DNS
 //
 
 import Foundation
 import os.log
+import Combine
 
-// MARK: - Threat Intelligence Protocol
+// MARK: - Provider Config Model (for UI & persistence)
 
-protocol ThreatIntelligenceProvider {
-  var name: String { get }
-  var isConfigured: Bool { get }
-  func checkURL(_ url: String) async -> ThreatIntelResult
-}
+class TIProviderConfig: ObservableObject, Identifiable {
+    let id: String
+    let name: String
+    let description: String
+    let requiresAPIKey: Bool
+    @Published var isEnabled: Bool
+    @Published var apiKey: String
 
-// MARK: - Threat Intel Result
-
-enum ThreatIntelResult {
-  case safe(provider: String, name: String)
-  case malicious(provider: String, url: String, types: [String], confidence: Double, details: String)
-  case error(provider: String, message: String)
-
-  var isMalicious: Bool {
-    if case .malicious = self { return true }
-    return false
-  }
-}
-
-// MARK: - 1. Google Safe Browsing Provider
-
-class GoogleSafeBrowsingProvider: ThreatIntelligenceProvider {
-  let name = "Google Safe Browsing"
-  private let apiKey: String
-  private let logger = Logger(subsystem: "com.nextguard.agent", category: "GoogleSB")
-
-  var isConfigured: Bool { !apiKey.isEmpty }
-
-  init(apiKey: String) {
-    self.apiKey = apiKey
-  }
-
-  func checkURL(_ url: String) async -> ThreatIntelResult {
-    guard isConfigured else { return .error(provider: name, message: "API key not configured") }
-    let endpoint = "https://safebrowsing.googleapis.com/v4/threatMatches:find?key=\(apiKey)"
-    guard let requestURL = URL(string: endpoint) else {
-      return .error(provider: name, message: "Invalid endpoint")
+    init(id: String, name: String, description: String, requiresAPIKey: Bool, isEnabled: Bool = false, apiKey: String = "") {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.requiresAPIKey = requiresAPIKey
+        self.isEnabled = isEnabled
+        self.apiKey = apiKey
     }
+}
 
-    var request = URLRequest(url: requestURL)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.timeoutInterval = 10
+// MARK: - Per-Provider Scan Result
 
-    let body: [String: Any] = [
-      "client": ["clientId": "nextguard-agent", "clientVersion": "2.1.0"],
-      "threatInfo": [
-        "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
-        "platformTypes": ["ANY_PLATFORM"],
-        "threatEntryTypes": ["URL"],
-        "threatEntries": [["url": url]]
-      ]
-    ]
+struct TIProviderResult {
+    let providerName: String
+    let isMalicious: Bool
+    let threatCategory: String?
+    let confidence: Double
+    let detail: String
+}
 
-    do {
-      request.httpBody = try JSONSerialization.data(withJSONObject: body)
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse else {
-        return .error(provider: name, message: "Invalid response")
-      }
+// MARK: - Aggregated Threat Intel Summary
 
-      if httpResponse.statusCode == 200 {
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let matches = json["matches"] as? [[String: Any]], !matches.isEmpty {
-          var threatTypes: [String] = []
-          for match in matches {
-            if let tt = match["threatType"] as? String {
-              threatTypes.append(tt)
+struct ThreatIntelSummary {
+    let providerResults: [TIProviderResult]
+    let positiveCount: Int
+    let totalEngines: Int
+    let combinedRiskScore: Int    // 0-100
+    let confidence: Double        // 0.0-1.0
+    let threatCategories: [String]
+    let summary: String
+
+    var isDefinitelyMalicious: Bool { positiveCount >= 2 || (positiveCount == 1 && confidence >= 0.90) }
+    var isSuspicious: Bool { positiveCount >= 1 && !isDefinitelyMalicious }
+
+    static let clean = ThreatIntelSummary(
+        providerResults: [], positiveCount: 0, totalEngines: 0,
+        combinedRiskScore: 0, confidence: 0, threatCategories: [], summary: ""
+    )
+}
+
+// MARK: - Internal Provider Protocol
+
+private protocol ThreatProvider {
+    var name: String { get }
+    func check(_ url: String) async -> TIProviderResult
+}
+
+// MARK: - 1. Google Safe Browsing
+
+private struct GoogleSBProvider: ThreatProvider {
+    let name = "Google Safe Browsing"
+    let apiKey: String
+    func check(_ url: String) async -> TIProviderResult {
+        guard !apiKey.isEmpty else { return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Not configured") }
+        let endpoint = "https://safebrowsing.googleapis.com/v4/threatMatches:find?key=\(apiKey)"
+        guard let reqURL = URL(string: endpoint) else { return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Invalid endpoint") }
+        var request = URLRequest(url: reqURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
+        let body: [String: Any] = [
+            "client": ["clientId": "nextguard-agent", "clientVersion": "2.1.0"],
+            "threatInfo": [
+                "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
+                "platformTypes": ["ANY_PLATFORM"],
+                "threatEntryTypes": ["URL"],
+                "threatEntries": [["url": url]]
+            ]
+        ]
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, resp) = try await URLSession.shared.data(for: request)
+            guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
+                return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "API error")
             }
-          }
-          logger.warning("[GoogleSB] Threat found for: \(url)")
-          return .malicious(
-            provider: name, url: url,
-            types: threatTypes,
-            confidence: 0.95,
-            details: "Google Safe Browsing: \(threatTypes.joined(separator: ", "))"
-          )
-        } else {
-          return .safe(provider: name, name: url)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let matches = json["matches"] as? [[String: Any]], !matches.isEmpty {
+                let types = matches.compactMap { $0["threatType"] as? String }
+                return TIProviderResult(providerName: name, isMalicious: true, threatCategory: types.first, confidence: 0.95, detail: "Google SB: \(types.joined(separator: ", "))")
+            }
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Clean")
+        } catch {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: error.localizedDescription)
         }
-      } else {
-        return .error(provider: name, message: "HTTP \(httpResponse.statusCode)")
-      }
-    } catch {
-      logger.error("[GoogleSB] Error: \(error.localizedDescription)")
-      return .error(provider: name, message: error.localizedDescription)
     }
-  }
 }
 
-// MARK: - 2. VirusTotal Provider
+// MARK: - 2. VirusTotal
 
-class VirusTotalProvider: ThreatIntelligenceProvider {
-  let name = "VirusTotal"
-  private let apiKey: String
-  private let logger = Logger(subsystem: "com.nextguard.agent", category: "VirusTotal")
-
-  var isConfigured: Bool { !apiKey.isEmpty }
-
-  init(apiKey: String) {
-    self.apiKey = apiKey
-  }
-
-  func checkURL(_ url: String) async -> ThreatIntelResult {
-    guard isConfigured else { return .error(provider: name, message: "API key not configured") }
-    let urlId = Data(url.utf8).base64EncodedString()
-      .replacingOccurrences(of: "+", with: "-")
-      .replacingOccurrences(of: "/", with: "_")
-      .replacingOccurrences(of: "=", with: "")
-    let endpoint = "https://www.virustotal.com/api/v3/urls/\(urlId)"
-    guard let requestURL = URL(string: endpoint) else {
-      return .error(provider: name, message: "Invalid endpoint")
-    }
-
-    var request = URLRequest(url: requestURL)
-    request.setValue(apiKey, forHTTPHeaderField: "x-apikey")
-    request.timeoutInterval = 15
-
-    do {
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse else {
-        return .error(provider: name, message: "Invalid response")
-      }
-
-      if httpResponse.statusCode == 200 {
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let attrs = (json["data"] as? [String: Any])?["attributes"] as? [String: Any],
-           let stats = attrs["last_analysis_stats"] as? [String: Int] {
-          let malicious = stats["malicious"] ?? 0
-          let suspicious = stats["suspicious"] ?? 0
-          let total = stats["harmless", default: 0] + malicious + suspicious + stats["undetected", default: 0]
-
-          if malicious > 0 {
-            let confidence = min(1.0, Double(malicious) / Double(max(total, 1)) * 3.0)
-            logger.warning("[VT] \(malicious) engines flagged: \(url)")
-            return .malicious(
-              provider: name, url: url,
-              types: ["VirusTotal: \(malicious)/\(total) engines"],
-              confidence: confidence,
-              details: "VirusTotal: \(malicious) malicious, \(suspicious) suspicious out of \(total) engines"
-            )
-          } else {
-            return .safe(provider: name, name: url)
-          }
+private struct VirusTotalProvider: ThreatProvider {
+    let name = "VirusTotal"
+    let apiKey: String
+    func check(_ url: String) async -> TIProviderResult {
+        guard !apiKey.isEmpty else { return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Not configured") }
+        let urlId = Data(url.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        guard let reqURL = URL(string: "https://www.virustotal.com/api/v3/urls/\(urlId)") else {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Invalid URL")
         }
-        return .safe(provider: name, name: url)
-      } else if httpResponse.statusCode == 404 {
-        return .safe(provider: name, name: url)
-      } else {
-        return .error(provider: name, message: "HTTP \(httpResponse.statusCode)")
-      }
-    } catch {
-      logger.error("[VT] Error: \(error.localizedDescription)")
-      return .error(provider: name, message: error.localizedDescription)
+        var request = URLRequest(url: reqURL)
+        request.setValue(apiKey, forHTTPHeaderField: "x-apikey")
+        request.timeoutInterval = 15
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: request)
+            guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
+                return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "API error")
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let attrs = (json["data"] as? [String: Any])?["attributes"] as? [String: Any],
+               let stats = attrs["last_analysis_stats"] as? [String: Int] {
+                let malicious = stats["malicious"] ?? 0
+                let total = (stats["harmless"] ?? 0) + malicious + (stats["suspicious"] ?? 0) + (stats["undetected"] ?? 0)
+                if malicious > 0 {
+                    return TIProviderResult(providerName: name, isMalicious: true, threatCategory: "Malware", confidence: min(1.0, Double(malicious) / Double(max(total, 1)) * 3.0), detail: "VT: \(malicious)/\(total) engines flagged")
+                }
+            }
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Clean")
+        } catch {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: error.localizedDescription)
+        }
     }
-  }
+}
 
-  // MARK: - 3. PhishTank Provider
+// MARK: - 3. PhishTank
 
-class PhishTankProvider: ThreatIntelligenceProvider {
-  let name = "PhishTank"
-  private let apiKey: String
-  private let logger = Logger(subsystem: "com.nextguard.agent", category: "PhishTank")
+private struct PhishTankProvider: ThreatProvider {
+    let name = "PhishTank"
+    let apiKey: String
+    func check(_ url: String) async -> TIProviderResult {
+        guard let reqURL = URL(string: "https://checkurl.phishtank.com/checkurl/") else {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Invalid endpoint")
+        }
+        var request = URLRequest(url: reqURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
+        var body = "format=json&url=\(url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url)"
+        if !apiKey.isEmpty { body += "&app_key=\(apiKey)" }
+        request.httpBody = body.data(using: .utf8)
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: request)
+            guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
+                return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "API error")
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = json["results"] as? [String: Any],
+               let inDB = results["in_database"] as? Bool, inDB,
+               let valid = results["valid"] as? Bool, valid {
+                return TIProviderResult(providerName: name, isMalicious: true, threatCategory: "Phishing", confidence: 0.98, detail: "PhishTank: Confirmed phishing")
+            }
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Clean")
+        } catch {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: error.localizedDescription)
+        }
+    }
+}
 
-  var isConfigured: Bool { true } // Works without API key (rate limited)
+// MARK: - 4. URLhaus (abuse.ch)
 
-  init(apiKey: String = "") {
-    self.apiKey = apiKey
-  }
+private struct URLhausProvider: ThreatProvider {
+    let name = "URLhaus"
+    func check(_ url: String) async -> TIProviderResult {
+        guard let reqURL = URL(string: "https://urlhaus-api.abuse.ch/v1/url/") else {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Invalid endpoint")
+        }
+        var request = URLRequest(url: reqURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = "url=\(url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url)".data(using: .utf8)
+        request.timeoutInterval = 10
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: request)
+            guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
+                return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "API error")
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let status = json["query_status"] as? String, status == "listed" {
+                let threat = (json["threat"] as? String) ?? "malware"
+                return TIProviderResult(providerName: name, isMalicious: true, threatCategory: threat, confidence: 0.92, detail: "URLhaus: \(threat)")
+            }
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Clean")
+        } catch {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: error.localizedDescription)
+        }
+    }
+}
 
-  func checkURL(_ url: String) async -> ThreatIntelResult {
-    let endpoint = "https://checkurl.phishtank.com/checkurl/"
-    guard let requestURL = URL(string: endpoint) else {
-      return .error(provider: name, message: "Invalid endpoint")
+// MARK: - 5. OpenPhish
+
+private struct OpenPhishProvider: ThreatProvider {
+    let name = "OpenPhish"
+    func check(_ url: String) async -> TIProviderResult {
+        // Query OpenPhish feed
+        guard let feedURL = URL(string: "https://openphish.com/feed.txt") else {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Feed unavailable")
+        }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: feedURL)
+            if let content = String(data: data, encoding: .utf8) {
+                let normalized = url.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                let urls = content.components(separatedBy: .newlines).map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+                if urls.contains(normalized) {
+                    return TIProviderResult(providerName: name, isMalicious: true, threatCategory: "Phishing", confidence: 0.90, detail: "OpenPhish: URL in phishing feed")
+                }
+                if let host = URL(string: normalized)?.host {
+                    for u in urls where URL(string: u)?.host == host {
+                        return TIProviderResult(providerName: name, isMalicious: true, threatCategory: "Phishing", confidence: 0.75, detail: "OpenPhish: Domain in feed")
+                    }
+                }
+            }
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Clean")
+        } catch {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - 6. AlienVault OTX
+
+private struct AlienVaultOTXProvider: ThreatProvider {
+    let name = "AlienVault OTX"
+    let apiKey: String
+    func check(_ url: String) async -> TIProviderResult {
+        guard !apiKey.isEmpty else { return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Not configured") }
+        guard let host = URL(string: url.hasPrefix("http") ? url : "https://\(url)")?.host else {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "No host")
+        }
+        guard let reqURL = URL(string: "https://otx.alienvault.com/api/v1/indicators/domain/\(host)/general") else {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Invalid endpoint")
+        }
+        var request = URLRequest(url: reqURL)
+        request.setValue(apiKey, forHTTPHeaderField: "X-OTX-API-KEY")
+        request.timeoutInterval = 10
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: request)
+            guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
+                return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "API error")
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let pulseInfo = json["pulse_info"] as? [String: Any],
+               let count = pulseInfo["count"] as? Int, count > 0 {
+                return TIProviderResult(providerName: name, isMalicious: true, threatCategory: "Threat Intelligence", confidence: min(1.0, Double(count) / 10.0), detail: "OTX: \(count) threat pulses")
+            }
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Clean")
+        } catch {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - 7. Cloudflare DNS Security
+
+private struct CloudflareDNSProvider: ThreatProvider {
+    let name = "Cloudflare DNS"
+    func check(_ url: String) async -> TIProviderResult {
+        guard let host = URL(string: url.hasPrefix("http") ? url : "https://\(url)")?.host else {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "No host")
+        }
+        guard let reqURL = URL(string: "https://security.cloudflare-dns.com/dns-query?name=\(host)&type=A") else {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Invalid endpoint")
+        }
+        var request = URLRequest(url: reqURL)
+        request.setValue("application/dns-json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 5
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let answers = json["Answer"] as? [[String: Any]] {
+                for answer in answers {
+                    if let addr = answer["data"] as? String, (addr == "0.0.0.0" || addr == "::") {
+                        return TIProviderResult(providerName: name, isMalicious: true, threatCategory: "DNS Blocked", confidence: 0.85, detail: "Cloudflare: Domain blocked")
+                    }
+                }
+            }
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: "Clean")
+        } catch {
+            return TIProviderResult(providerName: name, isMalicious: false, threatCategory: nil, confidence: 0, detail: error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - ThreatIntelligenceService (Main Orchestrator)
+
+final class ThreatIntelligenceService: ObservableObject {
+    static let shared = ThreatIntelligenceService()
+    private let logger = Logger(subsystem: "com.nextguard.agent", category: "ThreatIntelligence")
+
+    // Published properties for UI
+    @Published var isEnabled: Bool = true
+    @Published var providers: [TIProviderConfig] = []
+    @Published var totalQueriesCount: Int = 0
+    @Published var threatsFoundCount: Int = 0
+    @Published var queryTimeout: TimeInterval = 10
+
+    var enabledProviders: [TIProviderConfig] { providers.filter { $0.isEnabled } }
+
+    // Cache
+    private let cache = NSCache<NSString, CacheEntry>()
+    private let cacheExpiration: TimeInterval = 3600
+
+    private init() {
+        cache.countLimit = 10000
+        setupProviders()
     }
 
-    var request = URLRequest(url: requestURL)
-    request.httpMethod = "POST"
-    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    request.timeoutInterval = 10
+    private func setupProviders() {
+        let defaults = UserDefaults.standard
+        providers = [
+            TIProviderConfig(id: "googleSB", name: "Google Safe Browsing", description: "Google's threat detection with 5B+ URLs daily", requiresAPIKey: true,
+                isEnabled: defaults.bool(forKey: "ti.googleSB.enabled"), apiKey: defaults.string(forKey: "ti.googleSB.apiKey") ?? ""),
+            TIProviderConfig(id: "virusTotal", name: "VirusTotal", description: "70+ antivirus engines multi-scan platform", requiresAPIKey: true,
+                isEnabled: defaults.bool(forKey: "ti.virusTotal.enabled"), apiKey: defaults.string(forKey: "ti.virusTotal.apiKey") ?? ""),
+            TIProviderConfig(id: "phishTank", name: "PhishTank", description: "Community-driven phishing URL database", requiresAPIKey: false,
+                isEnabled: defaults.bool(forKey: "ti.phishTank.enabled")),
+            TIProviderConfig(id: "urlhaus", name: "URLhaus", description: "abuse.ch malicious URL tracking (free)", requiresAPIKey: false,
+                isEnabled: defaults.bool(forKey: "ti.urlhaus.enabled")),
+            TIProviderConfig(id: "openPhish", name: "OpenPhish", description: "Real-time phishing intelligence feed", requiresAPIKey: false,
+                isEnabled: defaults.bool(forKey: "ti.openPhish.enabled")),
+            TIProviderConfig(id: "alienVault", name: "AlienVault OTX", description: "Open Threat Exchange community platform", requiresAPIKey: true,
+                isEnabled: defaults.bool(forKey: "ti.alienVault.enabled"), apiKey: defaults.string(forKey: "ti.alienVault.apiKey") ?? ""),
+            TIProviderConfig(id: "cloudflareDNS", name: "Cloudflare DNS", description: "Security DNS filtering via 1.1.1.2", requiresAPIKey: false,
+                isEnabled: defaults.bool(forKey: "ti.cloudflareDNS.enabled")),
+        ]
+    }
 
-    var bodyStr = "format=json&url=\(url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url)"
-    if !apiKey.isEmpty { bodyStr += "&app_key=\(apiKey)" }
-    request.httpBody = bodyStr.data(using: .utf8)
+    // MARK: - Check URL
 
-    do {
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-        return .error(provider: name, message: "Invalid response")
-      }
+    func checkURL(_ urlString: String) async -> ThreatIntelSummary {
+        guard isEnabled else { return .clean }
+        totalQueriesCount += 1
 
-      if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-         let results = json["results"] as? [String: Any],
-         let inDatabase = results["in_database"] as? Bool, inDatabase,
-         let valid = results["valid"] as? Bool, valid {
-        logger.warning("[PhishTank] Phishing URL confirmed: \(url)")
-        return .malicious(
-          provider: name, url: url,
-          types: ["Phishing"],
-          confidence: 0.98,
-          details: "PhishTank: Confirmed phishing URL in database"
+        // Check cache
+        let key = NSString(string: urlString)
+        if let cached = cache.object(forKey: key), Date().timeIntervalSince(cached.date) < cacheExpiration {
+            return cached.summary
+        }
+
+        // Build active providers
+        var activeProviders: [ThreatProvider] = []
+        for cfg in providers where cfg.isEnabled {
+            switch cfg.id {
+            case "googleSB": activeProviders.append(GoogleSBProvider(apiKey: cfg.apiKey))
+            case "virusTotal": activeProviders.append(VirusTotalProvider(apiKey: cfg.apiKey))
+            case "phishTank": activeProviders.append(PhishTankProvider(apiKey: cfg.apiKey))
+            case "urlhaus": activeProviders.append(URLhausProvider())
+            case "openPhish": activeProviders.append(OpenPhishProvider())
+            case "alienVault": activeProviders.append(AlienVaultOTXProvider(apiKey: cfg.apiKey))
+            case "cloudflareDNS": activeProviders.append(CloudflareDNSProvider())
+            default: break
+            }
+        }
+
+        if activeProviders.isEmpty { return .clean }
+
+        // Query all concurrently
+        let results = await withTaskGroup(of: TIProviderResult.self) { group in
+            for provider in activeProviders {
+                group.addTask { await provider.check(urlString) }
+            }
+            var all: [TIProviderResult] = []
+            for await result in group { all.append(result) }
+            return all
+        }
+
+        // Aggregate
+        let positives = results.filter { $0.isMalicious }
+        let bestConf = positives.map { $0.confidence }.max() ?? 0
+        let categories = Array(Set(positives.compactMap { $0.threatCategory }))
+        let riskScore = min(100, Int(Double(positives.count) / Double(max(results.count, 1)) * 100 * (bestConf + 0.5)))
+        let summaryText = positives.isEmpty ? "No threats found" : "\(positives.count)/\(results.count) providers flagged this URL"
+
+        let summary = ThreatIntelSummary(
+            providerResults: results,
+            positiveCount: positives.count,
+            totalEngines: results.count,
+            combinedRiskScore: riskScore,
+            confidence: bestConf,
+            threatCategories: categories,
+            summary: summaryText
         )
-      }
-      return .safe(provider: name, name: url)
-    } catch {
-      logger.error("[PhishTank] Error: \(error.localizedDescription)")
-      return .error(provider: name, message: error.localizedDescription)
-    }
-  }
-}
 
-// MARK: - 4. URLhaus Provider (abuse.ch)
-
-class URLhausProvider: ThreatIntelligenceProvider {
-  let name = "URLhaus"
-  private let logger = Logger(subsystem: "com.nextguard.agent", category: "URLhaus")
-
-  var isConfigured: Bool { true } // Free, no API key needed
-
-  func checkURL(_ url: String) async -> ThreatIntelResult {
-    let endpoint = "https://urlhaus-api.abuse.ch/v1/url/"
-    guard let requestURL = URL(string: endpoint) else {
-      return .error(provider: name, message: "Invalid endpoint")
-    }
-
-    var request = URLRequest(url: requestURL)
-    request.httpMethod = "POST"
-    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    request.httpBody = "url=\(url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url)".data(using: .utf8)
-    request.timeoutInterval = 10
-
-    do {
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-        return .error(provider: name, message: "Invalid response")
-      }
-
-      if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-         let status = json["query_status"] as? String {
-        if status == "listed" {
-          let threat = (json["threat"] as? String) ?? "malware"
-          let tags = (json["tags"] as? [String]) ?? []
-          logger.warning("[URLhaus] Listed: \(url) - \(threat)")
-          return .malicious(
-            provider: name, url: url,
-            types: ["URLhaus: \(threat)"] + tags,
-            confidence: 0.92,
-            details: "URLhaus: Listed as \(threat). Tags: \(tags.joined(separator: ", "))"
-          )
+        if !positives.isEmpty {
+            DispatchQueue.main.async { self.threatsFoundCount += 1 }
         }
-      }
-      return .safe(provider: name, name: url)
-    } catch {
-      logger.error("[URLhaus] Error: \(error.localizedDescription)")
-      return .error(provider: name, message: error.localizedDescription)
-    }
-  }
-}
 
-// MARK: - 5. OpenPhish Provider
-
-class OpenPhishProvider: ThreatIntelligenceProvider {
-  let name = "OpenPhish"
-  private let logger = Logger(subsystem: "com.nextguard.agent", category: "OpenPhish")
-  private var phishingURLs: Set<String> = []
-  private var lastFetchDate: Date? = nil
-  private let feedURL = "https://openphish.com/feed.txt"
-  private let refreshInterval: TimeInterval = 3600 // Refresh every hour
-
-  var isConfigured: Bool { true } // Free feed
-
-  func checkURL(_ url: String) async -> ThreatIntelResult {
-    // Refresh feed if needed
-    if phishingURLs.isEmpty || shouldRefresh() {
-      await refreshFeed()
+        cache.setObject(CacheEntry(summary: summary), forKey: key)
+        logger.info("[TI] \(urlString): \(positives.count)/\(results.count) positive (score: \(riskScore))")
+        return summary
     }
 
-    let normalizedURL = url.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-    if phishingURLs.contains(normalizedURL) {
-      logger.warning("[OpenPhish] Phishing match: \(url)")
-      return .malicious(
-        provider: name, url: url,
-        types: ["Phishing"],
-        confidence: 0.90,
-        details: "OpenPhish: URL found in active phishing feed"
-      )
-    }
+    func clearCache() { cache.removeAllObjects() }
 
-    // Also check domain-level match
-    if let urlObj = URL(string: normalizedURL), let host = urlObj.host {
-      for phishURL in phishingURLs {
-        if let phishObj = URL(string: phishURL), phishObj.host == host {
-          logger.warning("[OpenPhish] Domain match: \(host)")
-          return .malicious(
-            provider: name, url: url,
-            types: ["Phishing"],
-            confidence: 0.75,
-            details: "OpenPhish: Domain \(host) found in phishing feed"
-          )
-        }
-      }
-    }
-    return .safe(provider: name, name: url)
-  }
-
-  private func shouldRefresh() -> Bool {
-    guard let last = lastFetchDate else { return true }
-    return Date().timeIntervalSince(last) > refreshInterval
-  }
-
-  private func refreshFeed() async {
-    guard let url = URL(string: feedURL) else { return }
-    do {
-      let (data, _) = try await URLSession.shared.data(from: url)
-      if let content = String(data: data, encoding: .utf8) {
-        let urls = content.components(separatedBy: .newlines)
-          .map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
-          .filter { !$0.isEmpty }
-        phishingURLs = Set(urls)
-        lastFetchDate = Date()
-        logger.info("[OpenPhish] Feed refreshed: \(self.phishingURLs.count) URLs loaded")
-      }
-    } catch {
-      logger.error("[OpenPhish] Feed refresh failed: \(error.localizedDescription)")
-    }
-
-    // MARK: - 6. AlienVault OTX Provider
-
-class AlienVaultOTXProvider: ThreatIntelligenceProvider {
-  let name = "AlienVault OTX"
-  private let apiKey: String
-  private let logger = Logger(subsystem: "com.nextguard.agent", category: "OTX")
-
-  var isConfigured: Bool { !apiKey.isEmpty }
-
-  init(apiKey: String) {
-    self.apiKey = apiKey
-  }
-
-  func checkURL(_ url: String) async -> ThreatIntelResult {
-    guard isConfigured else { return .error(provider: name, message: "API key not configured") }
-    guard let host = URL(string: url.hasPrefix("http") ? url : "https://\(url)")?.host else {
-      return .error(provider: name, message: "Cannot extract host")
-    }
-
-    let endpoint = "https://otx.alienvault.com/api/v1/indicators/domain/\(host)/general"
-    guard let requestURL = URL(string: endpoint) else {
-      return .error(provider: name, message: "Invalid endpoint")
-    }
-
-    var request = URLRequest(url: requestURL)
-    request.setValue(apiKey, forHTTPHeaderField: "X-OTX-API-KEY")
-    request.timeoutInterval = 10
-
-    do {
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-        return .error(provider: name, message: "Invalid response")
-      }
-
-      if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-         let pulseInfo = json["pulse_info"] as? [String: Any],
-         let count = pulseInfo["count"] as? Int, count > 0 {
-        let pulses = (pulseInfo["pulses"] as? [[String: Any]]) ?? []
-        var tags: [String] = []
-        for pulse in pulses.prefix(5) {
-          if let pulseTags = pulse["tags"] as? [String] {
-            tags.append(contentsOf: pulseTags)
-          }
-        }
-        let uniqueTags = Array(Set(tags)).prefix(10)
-        let confidence = min(1.0, Double(count) / 10.0)
-        logger.warning("[OTX] \(count) pulses for: \(host)")
-        return .malicious(
-          provider: name, url: url,
-          types: Array(uniqueTags),
-          confidence: confidence,
-          details: "AlienVault OTX: \(count) threat pulses. Tags: \(uniqueTags.joined(separator: ", "))"
-        )
-      }
-      return .safe(provider: name, name: url)
-    } catch {
-      logger.error("[OTX] Error: \(error.localizedDescription)")
-      return .error(provider: name, message: error.localizedDescription)
-    }
-  }
-}
-
-// MARK: - 7. Cloudflare DNS Provider (1.1.1.2 Family/Security)
-
-class CloudflareDNSProvider: ThreatIntelligenceProvider {
-  let name = "Cloudflare DNS"
-  private let logger = Logger(subsystem: "com.nextguard.agent", category: "CloudflareDNS")
-
-  var isConfigured: Bool { true } // Free, no API key needed
-
-  func checkURL(_ url: String) async -> ThreatIntelResult {
-    guard let host = URL(string: url.hasPrefix("http") ? url : "https://\(url)")?.host else {
-      return .error(provider: name, message: "Cannot extract host")
-    }
-
-    // Use Cloudflare's security DNS (1.1.1.2) via DoH
-    let endpoint = "https://security.cloudflare-dns.com/dns-query?name=\(host)&type=A"
-    guard let requestURL = URL(string: endpoint) else {
-      return .error(provider: name, message: "Invalid endpoint")
-    }
-
-    var request = URLRequest(url: requestURL)
-    request.setValue("application/dns-json", forHTTPHeaderField: "Accept")
-    request.timeoutInterval = 5
-
-    do {
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-        return .error(provider: name, message: "Invalid response")
-      }
-
-      if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-        let status = json["Status"] as? Int ?? 0
-        let answers = json["Answer"] as? [[String: Any]] ?? []
-
-        // Status 0 = NOERROR, check if blocked (0.0.0.0 or empty)
-        if status == 0 {
-          for answer in answers {
-            if let addr = answer["data"] as? String {
-              if addr == "0.0.0.0" || addr == "::" {
-                logger.warning("[CloudflareDNS] Blocked domain: \(host)")
-                return .malicious(
-                  provider: name, url: url,
-                  types: ["DNS Blocked"],
-                  confidence: 0.85,
-                  details: "Cloudflare Security DNS: Domain blocked (malware/phishing)"
-                )
-              }
+    func saveSettings() {
+        let defaults = UserDefaults.standard
+        for cfg in providers {
+            defaults.set(cfg.isEnabled, forKey: "ti.\(cfg.id).enabled")
+            if cfg.requiresAPIKey {
+                defaults.set(cfg.apiKey, forKey: "ti.\(cfg.id).apiKey")
             }
-          }
-          // If no answers at all, domain might be blocked
-          if answers.isEmpty {
-            // Check with regular DNS to see if it's actually blocked vs non-existent
-            let regularEndpoint = "https://cloudflare-dns.com/dns-query?name=\(host)&type=A"
-            if let regularURL = URL(string: regularEndpoint) {
-              var regularReq = URLRequest(url: regularURL)
-              regularReq.setValue("application/dns-json", forHTTPHeaderField: "Accept")
-              regularReq.timeoutInterval = 5
-              if let (regData, _) = try? await URLSession.shared.data(for: regularReq),
-                 let regJson = try? JSONSerialization.jsonObject(with: regData) as? [String: Any],
-                 let regAnswers = regJson["Answer"] as? [[String: Any]], !regAnswers.isEmpty {
-                // Regular DNS resolves but security DNS doesn't = blocked
-                logger.warning("[CloudflareDNS] Domain blocked by security filter: \(host)")
-                return .malicious(
-                  provider: name, url: url,
-                  types: ["DNS Security Filter"],
-                  confidence: 0.88,
-                  details: "Cloudflare Security DNS: Domain filtered by security policy"
-                )
-              }
-            }
-          }
         }
-      }
-      return .safe(provider: name, name: url)
-    } catch {
-      logger.error("[CloudflareDNS] Error: \(error.localizedDescription)")
-      return .error(provider: name, message: error.localizedDescription)
-    }
-  }
-
-  // MARK: - ThreatIntelligenceService (Main Orchestrator)
-
-class ThreatIntelligenceService {
-  static let shared = ThreatIntelligenceService()
-
-  private let logger = Logger(subsystem: "com.nextguard.agent", category: "ThreatIntelligence")
-  private var providers: [ThreatIntelligenceProvider] = []
-  private let cache = NSCache<NSString, ThreatIntelCacheEntry>()
-  private let cacheExpiration: TimeInterval = 3600
-
-  @Published var totalChecks: Int = 0
-  @Published var totalThreatsFound: Int = 0
-
-  private init() {
-    cache.countLimit = 10000
-    loadProviders()
-  }
-
-  func loadProviders() {
-    providers.removeAll()
-    let defaults = UserDefaults.standard
-
-    // 1. Google Safe Browsing
-    if let key = defaults.string(forKey: "threatIntel.googleSafeBrowsing.apiKey"), !key.isEmpty {
-      providers.append(GoogleSafeBrowsingProvider(apiKey: key))
-      logger.info("[TI] Google Safe Browsing loaded")
     }
 
-    // 2. VirusTotal
-    if let key = defaults.string(forKey: "threatIntel.virusTotal.apiKey"), !key.isEmpty {
-      providers.append(VirusTotalProvider(apiKey: key))
-      logger.info("[TI] VirusTotal loaded")
+    // Cache Entry
+    private class CacheEntry: NSObject {
+        let summary: ThreatIntelSummary
+        let date: Date
+        init(summary: ThreatIntelSummary, date: Date = Date()) {
+            self.summary = summary
+            self.date = date
+        }
     }
-
-    // 3. PhishTank
-    if defaults.bool(forKey: "threatIntel.phishTank.enabled") {
-      let key = defaults.string(forKey: "threatIntel.phishTank.apiKey") ?? ""
-      providers.append(PhishTankProvider(apiKey: key))
-      logger.info("[TI] PhishTank loaded")
-    }
-
-    // 4. URLhaus (free, no key)
-    if defaults.bool(forKey: "threatIntel.urlhaus.enabled") {
-      providers.append(URLhausProvider())
-      logger.info("[TI] URLhaus loaded")
-    }
-
-    // 5. OpenPhish (free feed)
-    if defaults.bool(forKey: "threatIntel.openPhish.enabled") {
-      providers.append(OpenPhishProvider())
-      logger.info("[TI] OpenPhish loaded")
-    }
-
-    // 6. AlienVault OTX
-    if let key = defaults.string(forKey: "threatIntel.alienVaultOTX.apiKey"), !key.isEmpty {
-      providers.append(AlienVaultOTXProvider(apiKey: key))
-      logger.info("[TI] AlienVault OTX loaded")
-    }
-
-    // 7. Cloudflare DNS (free, no key)
-    if defaults.bool(forKey: "threatIntel.cloudflareDNS.enabled") {
-      providers.append(CloudflareDNSProvider())
-      logger.info("[TI] Cloudflare DNS loaded")
-    }
-
-    logger.info("[TI] Total providers active: \(self.providers.count)")
-  }
-
-  func checkURL(_ url: String) async -> ThreatIntelResult {
-    totalChecks += 1
-
-    // Check cache
-    let cacheKey = NSString(string: url)
-    if let cached = cache.object(forKey: cacheKey),
-       Date().timeIntervalSince(cached.timestamp) < cacheExpiration {
-      return cached.result
-    }
-
-    if providers.isEmpty {
-      return .safe(provider: "ThreatIntelligence", name: url)
-    }
-
-    // Query all providers concurrently
-    let results = await withTaskGroup(of: ThreatIntelResult.self) { group in
-      for provider in providers {
-        group.addTask { await provider.checkURL(url) }
-      }
-      var all: [ThreatIntelResult] = []
-      for await result in group { all.append(result) }
-      return all
-    }
-
-    // Aggregate: any malicious = malicious (highest confidence wins)
-    var bestMalicious: ThreatIntelResult? = nil
-    var bestConfidence: Double = 0
-
-    for result in results {
-      if case .malicious(_, _, _, let conf, _) = result, conf > bestConfidence {
-        bestMalicious = result
-        bestConfidence = conf
-      }
-    }
-
-    if let malResult = bestMalicious {
-      totalThreatsFound += 1
-      cache.setObject(ThreatIntelCacheEntry(result: malResult), forKey: cacheKey)
-      return malResult
-    }
-
-    let safeResult = ThreatIntelResult.safe(provider: "ThreatIntelligence", name: url)
-    cache.setObject(ThreatIntelCacheEntry(result: safeResult), forKey: cacheKey)
-    return safeResult
-  }
-
-  var activeProviderCount: Int { providers.count }
-  var activeProviderNames: [String] { providers.map { $0.name } }
-
-  func clearCache() { cache.removeAllObjects() }
-}
-
-// MARK: - Cache Entry
-
-private class ThreatIntelCacheEntry {
-  let result: ThreatIntelResult
-  let timestamp: Date
-  init(result: ThreatIntelResult, timestamp: Date = Date()) {
-    self.result = result
-    self.timestamp = timestamp
-  }
-}
-}
-  }
-}
 }
