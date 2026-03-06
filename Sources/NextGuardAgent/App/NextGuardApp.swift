@@ -108,13 +108,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 mgmtClient.setTenantId("tenant-demo")
             }
 
-            await startScanningAnimation()
-            await updateConnectionStatus("Console: Registering...")
+            startScanningAnimation()
+            updateConnectionStatus("Console: Registering...")
 
             // Step 1: Register with console
             let registered = await mgmtClient.registerAgent()
             if registered {
-                await updateConnectionStatus("Console: Connected (\(mgmtClient.tenantId ?? "unknown"))")
+                updateConnectionStatus("Console: Connected (\(mgmtClient.tenantId ?? "unknown"))")
                 Self.logger.info("Agent registered with management console")
                 GUIManager.shared.updateConnectionStatus(
                     connected: true,
@@ -123,7 +123,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 menuBarController?.updateConnectionStatus(.connected)
             } else {
-                await updateConnectionStatus("Console: Offline (local mode)")
+                updateConnectionStatus("Console: Offline (local mode)")
                 Self.logger.warning("Running in local mode")
                 GUIManager.shared.updateConnectionStatus(
                     connected: false,
@@ -138,13 +138,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !remotePolicies.isEmpty {
                 policyEngine.loadPoliciesFromConsole(remotePolicies)
                 let count = policyEngine.activePolicies.count
-                await updatePoliciesStatus("Policies: \(count) rules (remote)")
+                updatePoliciesStatus("Policies: \(count) rules (remote)")
                 print("[OK] \(count) policies loaded from console")
                 GUIManager.shared.updatePolicyCount(count, source: "remote")
             } else {
-                await policyEngine.loadPolicies()
+                policyEngine.loadPolicies()
                 let count = policyEngine.activePolicies.count
-                await updatePoliciesStatus("Policies: \(count) rules (local)")
+                updatePoliciesStatus("Policies: \(count) rules (local)")
                 print("[OK] \(count) policies loaded locally")
                 GUIManager.shared.updatePolicyCount(count, source: "local")
             }
@@ -153,9 +153,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             mgmtClient.startHeartbeat()
             policyEngine.startPolicyRefresh(interval: 300)
 
-            await stopScanningAnimation()
-            await updateStatusMenuItem("Status: Monitoring Active")
-            await updateStatusIcon(protected: true)
+            stopScanningAnimation()
+            updateStatusMenuItem("Status: Monitoring Active")
+            updateStatusIcon(protected: true)
         }
 
         monitoringActive = true
