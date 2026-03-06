@@ -1,6 +1,6 @@
 {
   "$schema": "https://next-guard.com/schemas/agent-config-v1.json",
-  "version": "1.0.0",
+  "version": "2.3.0",
   "agent": {
     "id": "",
     "name": "",
