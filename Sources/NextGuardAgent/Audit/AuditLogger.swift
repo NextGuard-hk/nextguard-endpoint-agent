@@ -162,7 +162,7 @@ final class AuditLogger: @unchecked Sendable {
       
       // Compute HMAC for tamper detection
       let hmac = HMAC<SHA256>.authenticationCode(for: data, using: hmacKey)
-      let hmacHex = hmac.map { String(format: "%02x", $0) }.joined()
+      let _ = hmac.map { String(format: "%02x", $0) }.joined()
       
       // Update chain hash
       let chainData = (lastEventHash + event.eventId.uuidString).data(using: .utf8)!
