@@ -4,12 +4,14 @@
 //
 // Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 // URL Security Settings UI - Scan URLs, manage whitelist/blacklist
+// FIX: Connected NetworkFilterManager to Enable URL Security toggle
 //
 
 import SwiftUI
 
 struct URLSecuritySettingsView: View {
     @StateObject private var scanner = URLSecurityScanner.shared
+    @StateObject private var networkFilter = NetworkFilterManager.shared
     @State private var urlToScan: String = ""
     @State private var latestResult: URLScanResult? = nil
     @State private var showingResult = false
@@ -26,6 +28,19 @@ struct URLSecuritySettingsView: View {
                 statCard("URLs Scanned", "\(scanner.scannedCount)", "doc.text.magnifyingglass", .blue)
                 statCard("Threats Found", "\(scanner.threatsDetected)", "exclamationmark.triangle.fill", .red)
                 statCard("Blocked", "\(scanner.blockedCount)", "hand.raised.fill", .purple)
+            }
+
+            // Network Filter Status Banner
+            if networkFilter.isFilterEnabled {
+                HStack(spacing: 8) {
+                    Image(systemName: networkFilter.filterStatus == .active ? "shield.checkered" : "arrow.triangle.2.circlepath")
+                        .foregroundColor(networkFilter.filterStatus == .active ? .green : .orange)
+                    Text("DNS Filter: \(networkFilter.filterStatus.rawValue) — \(networkFilter.blockedDomainsCount) domains blocked")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.08)))
             }
 
             Divider()
@@ -48,20 +63,35 @@ struct URLSecuritySettingsView: View {
                 }
             }
 
-            // Scan Result
             if let result = latestResult {
                 scanResultView(result)
             }
 
             Divider()
 
-            // Settings
+            // Settings - THE KEY FIX: toggle now calls NetworkFilterManager
             VStack(alignment: .leading, spacing: 8) {
                 Text("Protection Settings").font(.subheadline.bold())
-                Toggle("Enable URL Security", isOn: $scanner.isEnabled)
+
+                // FIX: Use a binding that drives both scanner.isEnabled AND NetworkFilterManager
+                HStack {
+                    Toggle("Enable URL Security", isOn: Binding(
+                        get: { scanner.isEnabled },
+                        set: { enabled in
+                            scanner.isEnabled = enabled
+                            if enabled {
+                                networkFilter.enableFilter()
+                            } else {
+                                networkFilter.disableFilter()
+                            }
+                        }
+                    ))
                     .toggleStyle(.switch)
+                }
+
                 Toggle("Real-time Clipboard Monitoring", isOn: $scanner.isRealTimeEnabled)
                     .toggleStyle(.switch)
+
                 HStack {
                     Text("Block Mode").font(.caption)
                     Spacer()
@@ -76,9 +106,9 @@ struct URLSecuritySettingsView: View {
 
             Divider()
 
-            // Tabs: History / Whitelist / Blacklist
+            // Tabs: Threat Intel / Scan History / Whitelist / Blacklist
             Picker("", selection: $selectedTab) {
-                            Text("Threat Intel").tag(3)
+                Text("Threat Intel").tag(3)
                 Text("Scan History").tag(0)
                 Text("Whitelist").tag(1)
                 Text("Blacklist").tag(2)
@@ -86,9 +116,9 @@ struct URLSecuritySettingsView: View {
             .pickerStyle(.segmented)
 
             if selectedTab == 0 {
-                        } else if selectedTab == 3 {
-            threatIntelView
                 historyView
+            } else if selectedTab == 3 {
+                threatIntelView
             } else if selectedTab == 1 {
                 whitelistView
             } else {
@@ -130,7 +160,6 @@ struct URLSecuritySettingsView: View {
                         .foregroundColor(colorForThreat(result.threatLevel))
                 }
                 Spacer()
-                // Risk Score
                 ZStack {
                     Circle().stroke(colorForThreat(result.threatLevel).opacity(0.3), lineWidth: 3)
                         .frame(width: 44, height: 44)
@@ -142,29 +171,12 @@ struct URLSecuritySettingsView: View {
                         .foregroundColor(colorForThreat(result.threatLevel))
                 }
             }
-
-            // Categories
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(result.categories, id: \.self) { cat in
-                        Text(cat.rawValue)
-                            .font(.system(size: 9, weight: .medium))
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Capsule().fill(colorForThreat(result.threatLevel).opacity(0.15)))
-                            .foregroundColor(colorForThreat(result.threatLevel))
-                    }
-                }
-            }
-
-            // Details
             ForEach(result.details, id: \.self) { detail in
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "info.circle").font(.caption2).foregroundColor(.secondary)
                     Text(detail).font(.system(size: 10)).foregroundColor(.secondary)
                 }
             }
-
-            // SSL indicator
             HStack(spacing: 4) {
                 Image(systemName: result.sslValid ? "lock.fill" : "lock.open.fill")
                     .font(.caption2)
@@ -174,22 +186,17 @@ struct URLSecuritySettingsView: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(
-            colorForThreat(result.threatLevel).opacity(0.05)
-        ))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-            colorForThreat(result.threatLevel).opacity(0.2), lineWidth: 1
-        ))
+        .background(RoundedRectangle(cornerRadius: 10).fill(colorForThreat(result.threatLevel).opacity(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(colorForThreat(result.threatLevel).opacity(0.2), lineWidth: 1))
     }
 
     // MARK: - History View
     private var historyView: some View {
         VStack(alignment: .leading, spacing: 4) {
             if scanner.scanHistory.isEmpty {
-                Text("No scan history yet. Enter a URL above to scan.")
+                Text("No scan history yet.")
                     .font(.caption).foregroundColor(.secondary)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20).frame(maxWidth: .infinity)
             } else {
                 HStack {
                     Text("Recent Scans").font(.caption).foregroundColor(.secondary)
@@ -230,7 +237,7 @@ struct URLSecuritySettingsView: View {
             Text("Trusted domains that will always be allowed.")
                 .font(.caption).foregroundColor(.secondary)
             HStack {
-                TextField("Add trusted domain...", text: $newWhitelistDomain)
+                TextField("Add trusted domain (e.g. google.com)...", text: $newWhitelistDomain)
                     .textFieldStyle(.roundedBorder)
                 Button("Add") {
                     scanner.addToWhitelist(newWhitelistDomain)
@@ -254,15 +261,19 @@ struct URLSecuritySettingsView: View {
     }
 
     // MARK: - Blacklist View
+    // FIX: addToBlacklist now also calls NetworkFilterManager.addBlockedDomain
     private var blacklistView: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Blocked domains that will always be denied.")
+            Text("Blocked domains - always denied. DNS-level blocking applied when filter is enabled.")
                 .font(.caption).foregroundColor(.secondary)
             HStack {
-                TextField("Add blocked domain...", text: $newBlacklistDomain)
+                TextField("Add blocked domain (e.g. nba.com)...", text: $newBlacklistDomain)
                     .textFieldStyle(.roundedBorder)
                 Button("Add") {
-                    scanner.addToBlacklist(newBlacklistDomain)
+                    let d = newBlacklistDomain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    scanner.addToBlacklist(d)
+                    // FIX: Also push to NetworkFilterManager immediately
+                    networkFilter.addBlockedDomain(d)
                     newBlacklistDomain = ""
                 }.disabled(newBlacklistDomain.isEmpty)
             }
@@ -271,7 +282,10 @@ struct URLSecuritySettingsView: View {
                     Image(systemName: "xmark.shield.fill").foregroundColor(.red).font(.caption)
                     Text(domain).font(.system(size: 11))
                     Spacer()
-                    Button(action: { scanner.removeFromBlacklist(domain) }) {
+                    Button(action: {
+                        scanner.removeFromBlacklist(domain)
+                        networkFilter.removeBlockedDomain(domain)
+                    }) {
                         Image(systemName: "trash").font(.caption).foregroundColor(.red)
                     }.buttonStyle(.plain)
                 }
@@ -291,14 +305,11 @@ struct URLSecuritySettingsView: View {
         case .blocked: return .purple
         }
     }
-    
-    // MARK: - Threat Intelligence Settings View
 
+    // MARK: - Threat Intelligence View
     @StateObject private var tiService = ThreatIntelligenceService.shared
-
     private var threatIntelView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // TI Enable Toggle
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Threat Intelligence").font(.subheadline.bold())
@@ -308,22 +319,15 @@ struct URLSecuritySettingsView: View {
                 Spacer()
                 Toggle("", isOn: $tiService.isEnabled).toggleStyle(.switch)
             }
-
             if tiService.isEnabled {
                 Divider()
-
-                // Stats row
                 HStack(spacing: 12) {
                     tiStatCard("Providers", "\(tiService.enabledProviders.count)", "server.rack", .blue)
                     tiStatCard("Queries", "\(tiService.totalQueriesCount)", "arrow.up.arrow.down", .teal)
                     tiStatCard("Threats", "\(tiService.threatsFoundCount)", "shield.lefthalf.filled", .red)
                 }
-
                 Divider()
-
-                // Provider List
                 Text("Intelligence Providers").font(.caption.bold()).foregroundColor(.secondary)
-
                 ForEach(tiService.providers) { provider in
                     HStack(spacing: 10) {
                         Image(systemName: provider.isEnabled ? "checkmark.circle.fill" : "circle")
@@ -344,35 +348,13 @@ struct URLSecuritySettingsView: View {
                                 .background(Capsule().fill(Color.green.opacity(0.15)))
                         }
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4).padding(.horizontal, 8)
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
                 }
-
-                Divider()
-
-                // Cache settings
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Result Cache").font(.caption.bold())
-                        Text("Cache TI results to reduce API calls")
-                            .font(.system(size: 9)).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Button("Clear Cache") {
-                        tiService.clearCache()
-                    }
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                }
-
-                // Timeout setting
                 HStack {
                     Text("Query Timeout").font(.caption)
                     Spacer()
-                    Text("\(Int(tiService.queryTimeout))s")
-                        .font(.caption.bold())
-                        .foregroundColor(.secondary)
+                    Text("\(Int(tiService.queryTimeout))s").font(.caption.bold()).foregroundColor(.secondary)
                 }
             }
         }
