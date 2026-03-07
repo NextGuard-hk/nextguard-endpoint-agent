@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 // DNS-based URL filtering - blocks blacklisted domains at the network level
-// Integrates with LocalPolicyEngine and config.json blocklist
+// Integrates with config.json blocklist and custom user-added domains
 //
 import Foundation
 import Network
@@ -13,9 +13,9 @@ import OSLog
 // MARK: - DNS Filter
 
 /// DNSFilter enforces a domain blacklist by:
-/// 1. Loading blocked domains from config.json + LocalPolicyEngine rules
-/// 2. Intercepting outbound DNS queries via NEDNSProxyProvider (when System Extension active)
-/// 3. Falling back to /etc/hosts sinkhole entries when no System Extension permission
+/// 1. Loading blocked domains from config.json + built-in list + custom UI list
+/// 2. Writing sinkhole entries to /etc/hosts pointing blocked domains -> 0.0.0.0
+/// 3. Flushing DNS cache after applying changes
 final class DNSFilter: @unchecked Sendable {
     static let shared = DNSFilter()
     private let logger = Logger(subsystem: "com.nextguard.agent", category: "DNSFilter")
@@ -41,8 +41,6 @@ final class DNSFilter: @unchecked Sendable {
     }
 
     // MARK: - Built-in Blocked Domains
-    // These domains are always blocked when DNS Filter is enabled.
-    // Add or remove domains here to update the default blacklist.
     private let builtinBlocklist: Set<String> = [
         // Sports streaming (demo blacklist)
         "nba.com",
@@ -50,9 +48,8 @@ final class DNSFilter: @unchecked Sendable {
         "watch.nba.com",
         "stats.nba.com",
         "nbastore.com",
-        // Social media (when policy enabled)
+        // Uncomment to add more:
         // "facebook.com", "instagram.com", "twitter.com",
-        // Personal cloud storage
         // "wetransfer.com", "mega.nz",
     ]
 
@@ -64,7 +61,6 @@ final class DNSFilter: @unchecked Sendable {
     }
 
     // MARK: - Start / Stop
-
     func startFiltering() {
         guard isEnabled else {
             logger.info("DNSFilter is disabled - skipping start")
@@ -97,8 +93,7 @@ final class DNSFilter: @unchecked Sendable {
     /// Reload blocked domains from all sources:
     /// 1. Built-in blacklist
     /// 2. Custom domains from UserDefaults (added via Settings UI)
-    /// 3. Domains from LocalPolicyEngine rules tagged as "dns_block"
-    /// 4. Console-pushed domain list from config.json
+    /// 3. Console-pushed domain list from config.json
     func loadBlockedDomains() {
         var domains = builtinBlocklist
 
@@ -113,15 +108,6 @@ final class DNSFilter: @unchecked Sendable {
            let configDomains = json["blockedDomains"] as? [String] {
             domains.formUnion(configDomains.map { $0.lowercased() })
             logger.info("DNSFilter loaded \(configDomains.count) domains from config.json")
-        }
-
-        // Load from LocalPolicyEngine dns_block rules
-        let localRules = LocalPolicyEngine.shared.localRules
-        for rule in localRules where rule.enabled {
-            if let blockedHosts = rule.metadata?["blockedDomains"] {
-                let hosts = blockedHosts.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
-                domains.formUnion(hosts)
-            }
         }
 
         blockedDomains = domains
@@ -157,12 +143,9 @@ final class DNSFilter: @unchecked Sendable {
     }
 
     // MARK: - Domain Check
-
-    /// Returns true if the given URL/hostname should be blocked
     func shouldBlock(url: String) -> Bool {
         guard isFiltering, isEnabled else { return false }
         guard let host = URL(string: url)?.host?.lowercased() ?? url.lowercased() as String? else { return false }
-        // Exact match or subdomain match (e.g. "stats.nba.com" matches rule "nba.com")
         if blockedDomains.contains(host) { return true }
         for blocked in blockedDomains {
             if host.hasSuffix("." + blocked) { return true }
@@ -170,12 +153,7 @@ final class DNSFilter: @unchecked Sendable {
         return false
     }
 
-    // MARK: - /etc/hosts Sinkhole (fallback without System Extension)
-    //
-    // When NEDNSProxyProvider is not available (no System Extension approval),
-    // we write sinkhole entries to /etc/hosts pointing blocked domains -> 0.0.0.0.
-    // This requires the agent to be running as root (via LaunchDaemon).
-
+    // MARK: - /etc/hosts Sinkhole
     private let sinkholeMark = "# NextGuard DNS Filter - DO NOT EDIT"
     private let sinkholeIP = "0.0.0.0"
 
@@ -185,12 +163,9 @@ final class DNSFilter: @unchecked Sendable {
             logger.error("DNSFilter: cannot read /etc/hosts")
             return
         }
-        // Remove old NextGuard entries
         let lines = content.components(separatedBy: "\n")
             .filter { !$0.contains(sinkholeMark) }
         content = lines.joined(separator: "\n")
-
-        // Append new blocked entries
         var newLines = [""]
         newLines.append(sinkholeMark)
         for domain in blockedDomains.sorted() {
@@ -198,10 +173,8 @@ final class DNSFilter: @unchecked Sendable {
             newLines.append("\(sinkholeIP)\twww.\(domain)\t\(sinkholeMark)")
         }
         content += newLines.joined(separator: "\n")
-
         do {
             try content.write(toFile: hostsPath, atomically: true, encoding: .utf8)
-            // Flush DNS cache
             let task = Process()
             task.launchPath = "/usr/bin/dscacheutil"
             task.arguments = ["-flushcache"]
@@ -213,7 +186,7 @@ final class DNSFilter: @unchecked Sendable {
             try mdns.run()
             mdns.waitUntilExit()
             blockedCount = blockedDomains.count
-            logger.info("DNSFilter: /etc/hosts updated with \(self.blockedDomains.count) blocked domains, DNS cache flushed")
+            logger.info("DNSFilter: /etc/hosts updated with \(self.blockedDomains.count) blocked domains")
         } catch {
             logger.error("DNSFilter: failed to write /etc/hosts: \(error.localizedDescription)")
         }
@@ -227,7 +200,6 @@ final class DNSFilter: @unchecked Sendable {
         content = lines.joined(separator: "\n")
         do {
             try content.write(toFile: hostsPath, atomically: true, encoding: .utf8)
-            // Flush DNS cache
             let task = Process()
             task.launchPath = "/usr/bin/dscacheutil"
             task.arguments = ["-flushcache"]
