@@ -135,7 +135,7 @@ class EnrollmentManager: ObservableObject {
             deviceName: deviceName,
             macAddress: getMacAddress(),
             osVersion: osVersion,
-            agentVersion: "2.3.0",
+            agentVersion: "2.4.0",
             publicKeyPEM: publicKeyPEM
         )
 
