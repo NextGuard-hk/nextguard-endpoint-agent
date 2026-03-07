@@ -2,24 +2,18 @@
 // BlockPageServer.swift
 // NextGuard Endpoint DLP Agent
 //
-// Listens on BOTH port 80 (HTTP) and port 8080 (HTTP fallback).
-// For HTTPS blocked sites: /etc/hosts redirects the domain to 127.0.0.1,
-// browser hits port 80 first (for http://) or gets a connection refused
-// for https:// (port 443 needs a TLS cert - handled separately).
+// Uses raw POSIX sockets (not NWListener) to reliably bind port 80 and 8080.
+// NWListener silently fails to bind on macOS even as root - POSIX sockets work.
 // Custom message stored in /tmp/nextguard_block_message.txt
 //
 import Foundation
-import Network
 import OSLog
+import Darwin
 
 final class BlockPageServer: @unchecked Sendable {
     static let shared = BlockPageServer()
     private let logger = Logger(subsystem: "com.nextguard.agent", category: "BlockPageServer")
-    private var listener80: NWListener?
-    private var listener8080: NWListener?
-    private let queue = DispatchQueue(label: "com.nextguard.blockpage", qos: .background)
-
-    // Shared file - readable/writable by root process AND user UI process
+    private var isRunning = false
     private let messagePath = "/tmp/nextguard_block_message.txt"
 
     // MARK: - Custom Block Message
@@ -38,58 +32,94 @@ final class BlockPageServer: @unchecked Sendable {
 
     // MARK: - Start
     func start() {
-        startListener(port: 80, store: &listener80)
-        startListener(port: 8080, store: &listener8080)
-    }
-
-    private func startListener(port: UInt16, store: inout NWListener?) {
-        do {
-            let params = NWParameters.tcp
-            let nwPort = NWEndpoint.Port(rawValue: port)!
-            let listener = try NWListener(using: params, on: nwPort)
-            listener.newConnectionHandler = { [weak self] connection in
-                self?.handleConnection(connection)
-            }
-            listener.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    self?.logger.info("BlockPageServer listening on :\(port)")
-                case .failed(let error):
-                    self?.logger.warning("BlockPageServer port \(port) failed: \(error.localizedDescription)")
-                default: break
-                }
-            }
-            listener.start(queue: queue)
-            store = listener
-        } catch {
-            logger.warning("BlockPageServer: cannot bind port \(port): \(error.localizedDescription)")
-        }
+        guard !isRunning else { return }
+        isRunning = true
+        // Start on both port 80 and 8080
+        Thread.detachNewThread { self.runServer(port: 80) }
+        Thread.detachNewThread { self.runServer(port: 8080) }
     }
 
     // MARK: - Stop
     func stop() {
-        listener80?.cancel()
-        listener80 = nil
-        listener8080?.cancel()
-        listener8080 = nil
+        isRunning = false
     }
 
-    // MARK: - Handle Connection
-    private func handleConnection(_ connection: NWConnection) {
-        connection.start(queue: queue)
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, _, _ in
-            guard let self else { connection.cancel(); return }
-            let request = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-            let domain = self.extractHost(from: request) ?? "this website"
-            let html = self.buildBlockPage(domain: domain)
-            let response = self.buildHTTPResponse(html: html)
-            connection.send(content: response, completion: .contentProcessed { _ in
-                connection.cancel()
-            })
+    // MARK: - POSIX Socket Server
+    private func runServer(port: UInt16) {
+        // Create TCP socket
+        let serverFd = socket(AF_INET, SOCK_STREAM, 0)
+        guard serverFd >= 0 else {
+            logger.error("BlockPageServer: socket() failed for port \(port)")
+            return
+        }
+        defer { Darwin.close(serverFd) }
+
+        // Allow reuse of port immediately after restart
+        var yes: Int32 = 1
+        setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(serverFd, SOL_SOCKET, SO_REUSEPORT, &yes, socklen_t(MemoryLayout<Int32>.size))
+
+        // Bind to 127.0.0.1:port
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        addr.sin_zero = (0,0,0,0,0,0,0,0)
+
+        let bindResult = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(serverFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bindResult == 0 else {
+            logger.error("BlockPageServer: bind() failed port \(port): \(String(cString: strerror(errno)))")
+            return
+        }
+
+        guard listen(serverFd, 10) == 0 else {
+            logger.error("BlockPageServer: listen() failed port \(port)")
+            return
+        }
+
+        logger.info("BlockPageServer: listening on 127.0.0.1:\(port) via POSIX socket")
+        print("[BlockPageServer] Listening on port \(port)")
+
+        while isRunning {
+            var clientAddr = sockaddr_in()
+            var clientAddrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let clientFd = withUnsafeMutablePointer(to: &clientAddr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    accept(serverFd, $0, &clientAddrLen)
+                }
+            }
+            guard clientFd >= 0 else { continue }
+            // Handle each connection in a new thread
+            Thread.detachNewThread {
+                self.handleClient(fd: clientFd)
+            }
         }
     }
 
-    // MARK: - Extract Host
+    private func handleClient(fd: Int32) {
+        defer { Darwin.close(fd) }
+
+        // Read HTTP request
+        var buf = [UInt8](repeating: 0, count: 4096)
+        let n = recv(fd, &buf, buf.count - 1, 0)
+        guard n > 0 else { return }
+        let request = String(bytes: buf.prefix(Int(n)), encoding: .utf8) ?? ""
+        let domain = extractHost(from: request) ?? "this website"
+
+        // Send HTTP response with block page
+        let html = buildBlockPage(domain: domain)
+        let body = html.data(using: .utf8) ?? Data()
+        let header = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        var response = (header.data(using: .utf8) ?? Data()) + body
+        response.withUnsafeBytes { ptr in
+            _ = send(fd, ptr.baseAddress!, response.count, 0)
+        }
+    }
+
     private func extractHost(from request: String) -> String? {
         for line in request.components(separatedBy: "\r\n") {
             if line.lowercased().hasPrefix("host:") {
@@ -100,16 +130,6 @@ final class BlockPageServer: @unchecked Sendable {
         return nil
     }
 
-    // MARK: - HTTP Response
-    private func buildHTTPResponse(html: String) -> Data {
-        let body = html.data(using: .utf8) ?? Data()
-        let header = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-        var r = header.data(using: .utf8) ?? Data()
-        r.append(body)
-        return r
-    }
-
-    // MARK: - Block Page HTML
     private func buildBlockPage(domain: String) -> String {
         let msg = customBlockMessage.isEmpty
             ? "This website has been blocked by your organization\u{2019}s security policy."
@@ -120,7 +140,6 @@ final class BlockPageServer: @unchecked Sendable {
         <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="refresh" content="0">
         <title>Access Blocked - NextGuard DLP</title>
         <style>
         *{margin:0;padding:0;box-sizing:border-box}
