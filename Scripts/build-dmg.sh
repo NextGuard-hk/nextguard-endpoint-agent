@@ -11,8 +11,7 @@ set -euo pipefail
 
 APP_NAME="NextGuard DLP Agent"
 BUNDLE_ID="com.nextguard.agent"
-VERSION="2.3.0"
-BUILD_NUMBER="1"
+VERSION="2.4.0"BUILD_NUMBER="1"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
