@@ -12,10 +12,14 @@
 import AppKit
 import SwiftUI
 import os.log
+import Darwin
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
     static let logger = Logger(subsystem: "com.nextguard.agent", category: "App")
+
+    // Single instance lock fd - kept open for lifetime of process so flock stays held
+    private static var lockFd: Int32 = -1
 
     // Core engines
     private var statusItem: NSStatusItem!
@@ -36,30 +40,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
 
     static func main() {
-        // Single instance guard using file lock (works for dev builds without .app bundle)
+        // Single instance guard using flock()
+        // IMPORTANT: lockFd must remain open - flock is released when fd is closed or process dies
+        // Do NOT delete the lock file and do NOT close lockFd until process exits
         let lockPath = "/tmp/com.nextguard.agent.lock"
-        let lockFd = open(lockPath, O_CREAT | O_RDWR, 0o600)
+        lockFd = open(lockPath, O_CREAT | O_RDWR, 0o600)
         guard lockFd >= 0 else {
             print("[ERROR] Cannot open lock file")
             exit(1)
         }
         if flock(lockFd, LOCK_EX | LOCK_NB) != 0 {
+            // Another instance holds the lock
             print("[WARN] NextGuard Agent already running. Terminating duplicate instance.")
+            Darwin.close(lockFd)
             exit(0)
         }
-        // Write PID to lock file
-        let pid = "\(ProcessInfo.processInfo.processIdentifier)\n"
-        _ = pid.withCString { write(lockFd, $0, strlen($0)) }
+        // Lock acquired - write our PID for debugging
+        let pidStr = "\(ProcessInfo.processInfo.processIdentifier)\n"
+        _ = pidStr.withCString { ptr in write(lockFd, ptr, strlen(ptr)) }
+        // NOTE: do NOT close lockFd here - keep it open so the lock stays held
 
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         let delegate = AppDelegate()
         app.delegate = delegate
         app.run()
-
-        // Release lock on exit
+        // app.run() returns only when app terminates
+        // At this point it's safe to release the lock
         flock(lockFd, LOCK_UN)
-        close(lockFd)
+        Darwin.close(lockFd)
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.logger.info("NextGuard DLP Agent launching")
@@ -153,8 +162,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         BrowserMonitor.shared.stopMonitoring()
         mgmtClient.stopHeartbeat()
         policyEngine.stopPolicyRefresh()
-        // Remove lock file on clean exit
-        try? FileManager.default.removeItem(atPath: "/tmp/com.nextguard.agent.lock")
+        // NOTE: Do NOT delete or close the lock file here.
+        // The lock (lockFd) is released automatically in main() after app.run() returns,
+        // or by the OS when the process terminates. Deleting it would break the guard.
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -165,7 +175,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    // MARK: - Status Item Setup
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
