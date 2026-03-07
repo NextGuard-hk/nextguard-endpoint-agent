@@ -14,7 +14,7 @@ import OSLog
 
 /// DNSFilter enforces a domain blacklist by:
 /// 1. Loading blocked domains from config.json + built-in list + custom UI list
-/// 2. Writing sinkhole entries to /etc/hosts pointing blocked domains -> 0.0.0.0
+/// 2. Writing sinkhole entries to /etc/hosts pointing blocked domains -> 127.0.0.1
 /// 3. Flushing DNS cache after applying changes
 final class DNSFilter: @unchecked Sendable {
     static let shared = DNSFilter()
@@ -71,7 +71,7 @@ final class DNSFilter: @unchecked Sendable {
             guard let self else { return }
             self.loadBlockedDomains()
             self.applyHostsSinkhole()
-            self.isFiltering = true
+            self.isFiltering = true             BlockPageServer.shared.start()
             self.logger.info("DNSFilter started - \(self.blockedDomains.count) domains blocked")
             NotificationCenter.default.post(name: .dnsFilterStatusChanged, object: true)
         }
@@ -82,7 +82,7 @@ final class DNSFilter: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             self.removeHostsSinkhole()
-            self.isFiltering = false
+            self.isFiltering = false             BlockPageServer.shared.stop()
             self.logger.info("DNSFilter stopped")
             NotificationCenter.default.post(name: .dnsFilterStatusChanged, object: false)
         }
@@ -155,7 +155,7 @@ final class DNSFilter: @unchecked Sendable {
 
     // MARK: - /etc/hosts Sinkhole
     private let sinkholeMark = "# NextGuard DNS Filter - DO NOT EDIT"
-    private let sinkholeIP = "0.0.0.0"
+    private let sinkholeIP = "127.0.0.1"
 
     private func applyHostsSinkhole() {
         let hostsPath = "/etc/hosts"
