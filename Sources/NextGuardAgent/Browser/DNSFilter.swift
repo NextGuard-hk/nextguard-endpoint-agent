@@ -71,7 +71,8 @@ final class DNSFilter: @unchecked Sendable {
             guard let self else { return }
             self.loadBlockedDomains()
             self.applyHostsSinkhole()
-            self.isFiltering = true             BlockPageServer.shared.start()
+            self.isFiltering = true
+            BlockPageServer.shared.start()
             self.logger.info("DNSFilter started - \(self.blockedDomains.count) domains blocked")
             NotificationCenter.default.post(name: .dnsFilterStatusChanged, object: true)
         }
@@ -82,25 +83,23 @@ final class DNSFilter: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             self.removeHostsSinkhole()
-            self.isFiltering = false             BlockPageServer.shared.stop()
+            self.isFiltering = false
+            BlockPageServer.shared.stop()
             self.logger.info("DNSFilter stopped")
             NotificationCenter.default.post(name: .dnsFilterStatusChanged, object: false)
         }
     }
 
     // MARK: - Domain Management
-
     /// Reload blocked domains from all sources:
     /// 1. Built-in blacklist
     /// 2. Custom domains from UserDefaults (added via Settings UI)
     /// 3. Console-pushed domain list from config.json
     func loadBlockedDomains() {
         var domains = builtinBlocklist
-
         // Load custom domains added via Settings UI
         let custom = UserDefaults.standard.stringArray(forKey: customBlocklistKey) ?? []
         domains.formUnion(custom.map { $0.lowercased() })
-
         // Load from config.json if present
         let configPath = "/Library/NextGuard/config.json"
         if let data = FileManager.default.contents(atPath: configPath),
@@ -109,7 +108,6 @@ final class DNSFilter: @unchecked Sendable {
             domains.formUnion(configDomains.map { $0.lowercased() })
             logger.info("DNSFilter loaded \(configDomains.count) domains from config.json")
         }
-
         blockedDomains = domains
         logger.info("DNSFilter total blocked domains: \(self.blockedDomains.count)")
     }
