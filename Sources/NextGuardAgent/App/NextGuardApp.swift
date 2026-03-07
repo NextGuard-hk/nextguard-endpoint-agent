@@ -36,99 +36,85 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
 
     static func main() {
-        // Single instance guard
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.nextguard.agent"
-        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-        if runningApps.count > 1 {
+        // Single instance guard using file lock (works for dev builds without .app bundle)
+        let lockPath = "/tmp/com.nextguard.agent.lock"
+        let lockFd = open(lockPath, O_CREAT | O_RDWR, 0o600)
+        guard lockFd >= 0 else {
+            print("[ERROR] Cannot open lock file")
+            exit(1)
+        }
+        if flock(lockFd, LOCK_EX | LOCK_NB) != 0 {
             print("[WARN] NextGuard Agent already running. Terminating duplicate instance.")
             exit(0)
         }
+        // Write PID to lock file
+        let pid = "\(ProcessInfo.processInfo.processIdentifier)\n"
+        _ = pid.withCString { write(lockFd, $0, strlen($0)) }
+
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         let delegate = AppDelegate()
         app.delegate = delegate
         app.run()
+
+        // Release lock on exit
+        flock(lockFd, LOCK_UN)
+        close(lockFd)
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.logger.info("NextGuard DLP Agent launching")
         print("[OK] Application launched")
 
-        // Setup main window (full-featured GUI)
         mainWindowController = MainWindowController()
         mainWindowController?.showWindow(nil)
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         print("[OK] Main window opened")
 
-        // Setup menu bar controller
         menuBarController = MenuBarController()
         menuBarController?.setupMenuBar()
 
-        // Legacy status item (kept for compatibility)
         setupStatusItem()
         setupMenu()
 
-        // Start real-time monitoring
         ClipboardMonitor.shared.startMonitoring()
         print("[OK] Clipboard monitoring started")
-
         FileSystemWatcher.shared.startWatching()
         print("[OK] File system monitoring started")
-
         USBDeviceMonitor.shared.startMonitoring()
         print("[OK] USB device monitoring started")
-
         AirDropMonitor.shared.startMonitoring()
         print("[OK] AirDrop monitoring started")
-
         PrintMonitor.shared.startMonitoring()
         print("[OK] Print monitoring started")
-
         EmailMonitor.shared.startMonitoring()
         print("[OK] Email monitoring started")
-
         NetworkMonitor.shared.startMonitoring()
         print("[OK] Network monitoring started")
-
         ScreenCaptureMonitor.shared.startMonitoring()
         print("[OK] Screen capture monitoring started")
-
         BrowserMonitor.shared.startMonitoring()
         print("[OK] Browser monitoring started")
-
         WatermarkManager.shared.loadConfig()
         WatermarkManager.shared.startWatermark()
         print("[OK] Watermark manager initialized")
 
-        // Async initialization
         Task {
-            if mgmtClient.tenantId == nil {
-                mgmtClient.setTenantId("tenant-demo")
-            }
+            if mgmtClient.tenantId == nil { mgmtClient.setTenantId("tenant-demo") }
             startScanningAnimation()
             updateConnectionStatus("Console: Registering...")
-
             let registered = await mgmtClient.registerAgent()
             if registered {
                 updateConnectionStatus("Console: Connected (\(mgmtClient.tenantId ?? "unknown"))")
                 Self.logger.info("Agent registered with management console")
-                GUIManager.shared.updateConnectionStatus(
-                    connected: true,
-                    tenantId: mgmtClient.tenantId,
-                    consoleUrl: "https://next-guard.com"
-                )
+                GUIManager.shared.updateConnectionStatus(connected: true, tenantId: mgmtClient.tenantId, consoleUrl: "https://next-guard.com")
                 menuBarController?.updateConnectionStatus(.connected)
             } else {
                 updateConnectionStatus("Console: Offline (local mode)")
                 Self.logger.warning("Running in local mode")
-                GUIManager.shared.updateConnectionStatus(
-                    connected: false,
-                    tenantId: mgmtClient.tenantId,
-                    consoleUrl: "https://next-guard.com"
-                )
+                GUIManager.shared.updateConnectionStatus(connected: false, tenantId: mgmtClient.tenantId, consoleUrl: "https://next-guard.com")
                 menuBarController?.updateConnectionStatus(.disconnected)
             }
-
             let remotePolicies = await mgmtClient.pullPolicies()
             if !remotePolicies.isEmpty {
                 policyEngine.loadPoliciesFromConsole(remotePolicies)
@@ -143,14 +129,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("[OK] \(count) policies loaded locally")
                 GUIManager.shared.updatePolicyCount(count, source: "local")
             }
-
             mgmtClient.startHeartbeat()
             policyEngine.startPolicyRefresh(interval: 300)
             stopScanningAnimation()
             updateStatusMenuItem("Status: Monitoring Active")
             updateStatusIcon(protected: true)
         }
-
         monitoringActive = true
         print("[OK] DLP monitoring active")
         print("[OK] NextGuard Agent ready")
@@ -169,6 +153,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         BrowserMonitor.shared.stopMonitoring()
         mgmtClient.stopHeartbeat()
         policyEngine.stopPolicyRefresh()
+        // Remove lock file on clean exit
+        try? FileManager.default.removeItem(atPath: "/tmp/com.nextguard.agent.lock")
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -196,33 +182,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         menu.addItem(NSMenuItem.separator())
-
         connectionMenuItem = NSMenuItem(title: "Console: Connecting...", action: nil, keyEquivalent: "")
         connectionMenuItem.isEnabled = false
         menu.addItem(connectionMenuItem)
-
         statusMenuItem = NSMenuItem(title: "Status: Initializing...", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
-
         policiesMenuItem = NSMenuItem(title: "Policies: Loading...", action: nil, keyEquivalent: "")
         policiesMenuItem.isEnabled = false
         menu.addItem(policiesMenuItem)
-
         menu.addItem(NSMenuItem.separator())
         let dashboardItem = NSMenuItem(title: "Open Dashboard", action: #selector(showDashboard), keyEquivalent: "d")
         dashboardItem.target = self
         menu.addItem(dashboardItem)
-
         let scanItem = NSMenuItem(title: "Scan Clipboard Now", action: #selector(scanClipboard), keyEquivalent: "c")
         scanItem.target = self
         menu.addItem(scanItem)
-
         menu.addItem(NSMenuItem.separator())
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
-
         statusItem.menu = nil
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
@@ -261,7 +240,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return menu
     }
 
-    // MARK: - MainActor Helpers
     @MainActor private func updateConnectionStatus(_ text: String) { connectionMenuItem?.title = text }
     @MainActor private func updateStatusMenuItem(_ text: String) { statusMenuItem?.title = text }
     @MainActor private func updatePoliciesStatus(_ text: String) { policiesMenuItem?.title = text }
@@ -273,7 +251,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @MainActor private func stopScanningAnimation() { scanningTimer?.invalidate(); scanningTimer = nil }
 
-    // MARK: - Actions
     @objc func showDashboard() {
         mainWindowController?.showWindow(nil)
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
@@ -309,14 +286,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 for result in results {
                     let guiAction: RuleAction = result.action.rawValue == "block" ? .block : .audit
                     GUIManager.shared.notifyIncident(policyName: result.ruleName, action: guiAction)
-                    await mgmtClient.reportIncident(
-                        policyId: result.ruleId,
-                        channel: "clipboard",
-                        severity: result.severity.rawValue,
-                        action: result.action.rawValue,
-                        matchCount: result.matches.count,
-                        details: "Clipboard scan: \(result.matches.count) matches for policy \(result.ruleName)"
-                    )
+                    await mgmtClient.reportIncident(policyId: result.ruleId, channel: "clipboard", severity: result.severity.rawValue, action: result.action.rawValue, matchCount: result.matches.count, details: "Clipboard scan: \(result.matches.count) matches for policy \(result.ruleName)")
                 }
                 let incidentCount = results.count + (hasLocalMatch ? 1 : 0)
                 menuBarController?.updateIncidentCount(incidentCount)
