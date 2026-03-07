@@ -28,7 +28,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     static func main() {
         // ── Single instance guard using flock() ──────────────────────────────
-        // lockFd must remain open - OS releases flock when fd closes or process exits
         let lockPath = "/tmp/com.nextguard.agent.lock"
         let fd = open(lockPath, O_CREAT | O_RDWR, 0o600)
         guard fd >= 0 else {
@@ -36,24 +35,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             exit(1)
         }
         if flock(fd, LOCK_EX | LOCK_NB) != 0 {
-            // Another instance is already running - terminate this duplicate
             print("[WARN] NextGuard Agent already running. Terminating duplicate instance.")
             Darwin.close(fd)
             exit(0)
         }
-        // Hold lock for the entire process lifetime
         lockFd = fd
         let pidStr = "\(ProcessInfo.processInfo.processIdentifier)\n"
         _ = pidStr.withCString { ptr in write(lockFd, ptr, strlen(ptr)) }
 
-        // ── Launch as menu-bar-only app (no Dock icon, no extra window) ─────
+        // ── Install signal handlers to ensure /etc/hosts cleanup on kill ────
+        // This is CRITICAL - pkill/Ctrl+C sends SIGTERM/SIGINT which normally
+        // bypasses applicationWillTerminate. We intercept them here.
+        let cleanup: @convention(c) (Int32) -> Void = { _ in
+            print("[NextGuard] Signal received - cleaning up /etc/hosts...")
+            DNSFilter.shared.stopFiltering()
+            // Small sleep to let the async queue flush
+            Thread.sleep(forTimeInterval: 0.5)
+            print("[NextGuard] Cleanup complete. Exiting.")
+            exit(0)
+        }
+        signal(SIGTERM, cleanup)
+        signal(SIGINT, cleanup)
+
+        // ── Launch as menu-bar-only app (no Dock icon) ─────────────────────
         let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)  // FIX: was .regular which caused two visible instances
+        app.setActivationPolicy(.accessory)
         let delegate = AppDelegate()
         app.delegate = delegate
         app.run()
 
-        // Unlock and release on clean exit
+        // Unlock on clean exit
         flock(lockFd, LOCK_UN)
         Darwin.close(lockFd)
     }
@@ -62,16 +73,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Self.logger.info("NextGuard DLP Agent v2.4.0 launching")
         print("[OK] Application launched")
 
-        // Setup menu bar FIRST - MenuBarController creates the ONLY status item
         menuBarController = MenuBarController()
         menuBarController?.setupMenuBar()
         print("[OK] Menu bar initialized")
 
-        // Setup main window (hidden by default; opens on demand)
         mainWindowController = MainWindowController()
         print("[OK] Main window controller ready")
 
-        // Start all monitors
         ClipboardMonitor.shared.startMonitoring()
         FileSystemWatcher.shared.startWatching()
         USBDeviceMonitor.shared.startMonitoring()
@@ -86,7 +94,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         WatermarkManager.shared.startWatermark()
         print("[OK] All monitors started (including DNS Filter)")
 
-        // Async: connect to console and load policies
         Task {
             if mgmtClient.tenantId == nil { mgmtClient.setTenantId("tenant-demo") }
             menuBarController?.updateConnectionStatus(.syncing)
@@ -111,12 +118,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             mgmtClient.startHeartbeat()
             policyEngine.startPolicyRefresh(interval: 300)
         }
-
         print("[OK] NextGuard Agent v2.4.0 ready")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        print("[OK] NextGuard DLP Agent shutting down")
+        print("[NextGuard] Shutting down - removing /etc/hosts entries...")
+        // Stop DNS filter SYNCHRONOUSLY to ensure /etc/hosts is cleaned
+        DNSFilter.shared.stopFiltering()
+        Thread.sleep(forTimeInterval: 0.3)
         ClipboardMonitor.shared.stopMonitoring()
         FileSystemWatcher.shared.stopWatching()
         USBDeviceMonitor.shared.stopMonitoring()
@@ -126,10 +135,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NetworkMonitor.shared.stopMonitoring()
         ScreenCaptureMonitor.shared.stopMonitoring()
         BrowserMonitor.shared.stopMonitoring()
-        DNSFilter.shared.stopFiltering()
+        BlockPageServer.shared.stop()
         mgmtClient.stopHeartbeat()
         policyEngine.stopPolicyRefresh()
-        // NOTE: Do NOT delete or close lockFd here - handled in main() after app.run() returns
+        print("[NextGuard] Shutdown complete.")
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
