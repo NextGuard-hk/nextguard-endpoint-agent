@@ -4,18 +4,15 @@
 //
 // Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 //
-
 import Foundation
 import SwiftUI
 import AppKit
 import os.log
 
 // MARK: - Channel Monitor Coordinator
-
 class ChannelMonitorCoordinator {
     static let shared = ChannelMonitorCoordinator()
     private init() {}
-
     private var monitors: [String: Any] = [:]
 
     func register(_ monitor: Any, for channel: String) {
@@ -25,7 +22,7 @@ class ChannelMonitorCoordinator {
     func startAll() {
         for (channel, _) in monitors {
             Logger(subsystem: "com.nextguard.agent", category: "ChannelCoordinator")
-                .info("Starting monitor for channel: \(channel)")
+            .info("Starting monitor for channel: \(channel)")
         }
     }
 
@@ -35,7 +32,6 @@ class ChannelMonitorCoordinator {
 }
 
 // MARK: - SwiftUI Menu Bar View
-
 struct NextGuardMenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -59,7 +55,6 @@ struct NextGuardMenuBarView: View {
 }
 
 // MARK: - SwiftUI Settings View
-
 struct NextGuardSettingsView: View {
     var body: some View {
         TabView {
@@ -103,7 +98,7 @@ private struct AboutSettingsTab: View {
                 .font(.system(size: 48))
             Text("NextGuard Endpoint DLP Agent")
                 .font(.title2)
-            Text("Version 2.3.0")
+            Text("Version 2.4.0")  // Updated from 2.3.0
                 .foregroundColor(.secondary)
             Text("Copyright (c) 2026 NextGuard Technology Limited")
                 .font(.caption)
@@ -115,7 +110,6 @@ private struct AboutSettingsTab: View {
 }
 
 // MARK: - Heartbeat Service
-
 class HeartbeatService {
     static let shared = HeartbeatService()
     private var timer: Timer?
@@ -134,7 +128,6 @@ class HeartbeatService {
 }
 
 // MARK: - DLP Policy Engine isActive Extension
-
 extension DLPPolicyEngine {
     var isActive: Bool {
         return !activePolicies.isEmpty
