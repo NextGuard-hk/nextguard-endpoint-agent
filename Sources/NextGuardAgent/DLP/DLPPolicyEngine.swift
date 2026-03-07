@@ -281,7 +281,7 @@ final class AgentConfig {
     var managementServerURL: String = "https://console.next-guard.com"
     var apiToken: String = ""
     var deviceId: String = ""
-    var agentVersion: String = "2.3.0"
+    var agentVersion: String = "2.4.0"
 
     private init() {
         deviceId = getDeviceId()
