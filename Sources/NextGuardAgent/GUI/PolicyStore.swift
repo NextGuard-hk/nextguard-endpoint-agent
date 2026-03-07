@@ -1,11 +1,10 @@
 //
-//  PolicyStore.swift
-//  NextGuardAgent
+// PolicyStore.swift
+// NextGuardAgent
 //
-//  Local policy data model and persistence store
-//  NOTE: RuleAction (not PolicyAction) to avoid conflict with Policy/PolicyManager.swift
+// Local policy data model and persistence store
+// NOTE: RuleAction (not PolicyAction) to avoid conflict with Policy/PolicyManager.swift
 //
-
 import Foundation
 import Combine
 
@@ -15,7 +14,7 @@ enum RuleAction: String, Codable, CaseIterable {
     case block = "block"
     case audit = "audit"
     case allow = "allow"
-    
+
     var displayName: String {
         switch self {
         case .block: return "Block"
@@ -23,7 +22,7 @@ enum RuleAction: String, Codable, CaseIterable {
         case .allow: return "Allow"
         }
     }
-    
+
     var color: String {
         switch self {
         case .block: return "red"
@@ -44,7 +43,7 @@ struct GUIPolicyRule: Codable, Identifiable {
     var destinations: [String]
     var createdAt: Date
     var updatedAt: Date
-    
+
     init(id: UUID = UUID(), name: String, description: String = "",
          enabled: Bool = true, action: RuleAction = .audit,
          keywords: [String] = [], fileTypes: [String] = [],
@@ -72,7 +71,7 @@ struct AgentStatusInfo: Codable {
     var agentVersion: String
     var tenantId: String?
     var consoleUrl: String
-    
+
     static var `default`: AgentStatusInfo {
         AgentStatusInfo(
             isProtected: true,
@@ -81,7 +80,7 @@ struct AgentStatusInfo: Codable {
             totalIncidentsToday: 0,
             blockedToday: 0,
             auditedToday: 0,
-            agentVersion: "2.3.0",
+            agentVersion: "2.4.0",  // Updated from 2.3.0
             tenantId: nil,
             consoleUrl: "https://next-guard.com"
         )
@@ -90,46 +89,46 @@ struct AgentStatusInfo: Codable {
 
 // MARK: - StatusDashboardView Aliases
 extension AgentStatusInfo {
-        var protectionEnabled: Bool {
-                    get { isProtected }
-                    set { isProtected = newValue }
-                }
-        var isConnected: Bool { isConnectedToConsole }
-        var lastPolicySync: Date? { lastSyncTime }
-        var todayIncidentCount: Int { totalIncidentsToday }
-        var todayBlockCount: Int { blockedToday }
-        var todayAuditCount: Int { auditedToday }
-        var activePolicyCount: Int { PolicyStore.shared.policies.filter { $0.enabled }.count }
-        var endpointId: String { tenantId ?? "" }
-        var enrollmentStatus: String {
-                    isConnectedToConsole ? "Managed" : "Standalone"
-                }
+    var protectionEnabled: Bool {
+        get { isProtected }
+        set { isProtected = newValue }
     }
-// MARK: - Policy Store
+    var isConnected: Bool { isConnectedToConsole }
+    var lastPolicySync: Date? { lastSyncTime }
+    var todayIncidentCount: Int { totalIncidentsToday }
+    var todayBlockCount: Int { blockedToday }
+    var todayAuditCount: Int { auditedToday }
+    var activePolicyCount: Int { PolicyStore.shared.policies.filter { $0.enabled }.count }
+    var endpointId: String { tenantId ?? "" }
+    var enrollmentStatus: String {
+        isConnectedToConsole ? "Managed" : "Standalone"
+    }
+}
 
+// MARK: - Policy Store
 class PolicyStore: ObservableObject {
     static let shared = PolicyStore()
-    
+
     @Published var policies: [GUIPolicyRule] = []
     @Published var agentStatus: AgentStatusInfo = .default
     @Published var isLoading = false
     @Published var lastError: String?
-    
+
     private let policiesKey = "ng_local_policies"
     private var syncTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
-    
+
     private init() {
         loadLocalPolicies()
         loadDefaultPolicies()
         startPeriodicSync()
     }
-    
+
     // MARK: - Default Policies
-    
+
     private func loadDefaultPolicies() {
         guard policies.isEmpty else { return }
-        
+
         policies = [
             GUIPolicyRule(
                 name: "Credit Card Data",
@@ -170,14 +169,14 @@ class PolicyStore: ObservableObject {
         ]
         saveLocalPolicies()
     }
-    
+
     // MARK: - CRUD Operations
-    
+
     func addPolicy(_ policy: GUIPolicyRule) {
         policies.append(policy)
         saveLocalPolicies()
     }
-    
+
     func updatePolicy(_ policy: GUIPolicyRule) {
         if let index = policies.firstIndex(where: { $0.id == policy.id }) {
             var updated = policy
@@ -186,46 +185,46 @@ class PolicyStore: ObservableObject {
             saveLocalPolicies()
         }
     }
-    
+
     func deletePolicy(_ policy: GUIPolicyRule) {
         policies.removeAll { $0.id == policy.id }
         saveLocalPolicies()
     }
-    
+
     func togglePolicy(_ policy: GUIPolicyRule) {
         var updated = policy
         updated.enabled = !policy.enabled
         updatePolicy(updated)
     }
-    
+
     // MARK: - Persistence
-    
+
     private func saveLocalPolicies() {
         if let data = try? JSONEncoder().encode(policies) {
             UserDefaults.standard.set(data, forKey: policiesKey)
         }
     }
-    
+
     private func loadLocalPolicies() {
         guard let data = UserDefaults.standard.data(forKey: policiesKey),
               let decoded = try? JSONDecoder().decode([GUIPolicyRule].self, from: data) else { return }
         policies = decoded
     }
-    
+
     // MARK: - Console Sync
-    
+
     private func startPeriodicSync() {
         syncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             self?.fetchPoliciesFromConsole()
         }
     }
-    
+
     func fetchPoliciesFromConsole() {
         guard let tenantId = agentStatus.tenantId,
               let url = URL(string: "\(agentStatus.consoleUrl)/api/v1/policies/bundle?tenantId=\(tenantId)") else { return }
-        
+
         isLoading = true
-        
+
         URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
@@ -238,7 +237,7 @@ class PolicyStore: ObservableObject {
             }
         }.resume()
     }
-    
+
     func recordIncident(action: RuleAction) {
         agentStatus.totalIncidentsToday += 1
         if action == .block {
