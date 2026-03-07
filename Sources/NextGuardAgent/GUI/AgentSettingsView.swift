@@ -20,7 +20,7 @@ struct AgentSettingsView: View {
     @State private var dnsFilterEnabled: Bool = DNSFilter.shared.isEnabled
     @State private var newDomain: String = ""
     @State private var customDomains: [String] = DNSFilter.shared.customBlocklist
-    @State private var showDNSDetail: Bool = false
+    @State private var showDNSDetail: Bool =     @State private var blockPageMessage: String = BlockPageServer.shared.customBlockMessage false
 
     private var isLocked: Bool {
         modeManager.mode == AgentMode.managed && modeManager.managedSettingsLocked
@@ -90,8 +90,7 @@ struct AgentSettingsView: View {
                 // Status indicator
                 if dnsFilterEnabled {
                     HStack(spacing: 5) {
-                        Circle()
-                            .fill(DNSFilter.shared.isFiltering ? Color.green : Color.orange)
+Add custom block page message editor to DNS Filter settings UI                            .fill(DNSFilter.shared.isFiltering ? Color.green : Color.orange)
                             .frame(width: 7, height: 7)
                         Text(DNSFilter.shared.isFiltering
                                 ? "Active – /etc/hosts sinkhole applied"
@@ -107,14 +106,14 @@ struct AgentSettingsView: View {
                         HStack(spacing: 4) {
                             Image(systemName: showDNSDetail ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 9))
-                            Text(showDNSDetail ? "Hide Blocked Domains" : "Manage Blocked Domains")
+                            Text(showDNSDetail ? "Hide Blocked Domains" : "Block Page Settings")
                                 .font(.system(size: 10))
                         }
                         .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
 
-                    if showDNSDetail {
+                    if showDNSDetail {                     // Block Page Custom Message                     VStack(alignment: .leading, spacing: 6) {                         Text("Custom Block Page Message")                             .font(.system(size: 11, weight: .medium))                             .foregroundColor(.secondary)                         TextEditor(text: $blockPageMessage)                             .font(.system(size: 12))                             .frame(minHeight: 60, maxHeight: 80)                             .padding(6)                             .background(Color(NSColor.controlBackgroundColor))                             .cornerRadius(6)                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))                         Button("Save Message") {                             BlockPageServer.shared.customBlockMessage = blockPageMessage                         }                         .font(.system(size: 11))                         .buttonStyle(.borderedProminent)                         .controlSize(.small)                     }                     .padding(.bottom, 8)
                         dnsBlocklistEditor
                     }
                 }
