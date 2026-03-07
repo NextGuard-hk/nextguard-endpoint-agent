@@ -1,7 +1,6 @@
 {
   "$schema": "https://next-guard.com/schemas/agent-config-v1.json",
-  "version": "2.3.0",
-  "agent": {
+  "version": "2.4.0",  "agent": {
     "id": "",
     "name": "",
     "serverUrl": "https://api.next-guard.com",
