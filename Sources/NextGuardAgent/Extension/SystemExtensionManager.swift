@@ -209,7 +209,7 @@ final class ComplianceReporter {
       systemExtensionInstalled: SystemExtensionManager.shared.extensionState == .installed,
       totalEventsToday: 0,
       totalBlockedToday: 0,
-      policyVersion: "2.3.0",
+      policyVersion: "2.4.0",
       lastPolicySync: nil,
       complianceFrameworks: ["ISO 27001:2022", "NIST SP 800-171", "CIS Controls v8", "COBIT 2019", "PCI DSS 4.0"]
     )
