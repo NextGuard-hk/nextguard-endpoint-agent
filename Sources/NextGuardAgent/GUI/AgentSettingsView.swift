@@ -2,11 +2,10 @@
 // AgentSettingsView.swift
 // NextGuardAgent
 //
-// Agent settings panel - Console connection with AgentModeManager awareness
+// Agent settings panel - Console connection + DNS Filter toggle
 // When in managed+locked mode, fields are disabled
 // Design inspired by Zscaler Client Connector & Forcepoint DLP Agent
 //
-
 import SwiftUI
 import AppKit
 
@@ -17,39 +16,185 @@ struct AgentSettingsView: View {
     @State private var consoleUrlInput: String = ""
     @State private var showSaved = false
 
+    // DNS Filter state - reads from DNSFilter.shared
+    @State private var dnsFilterEnabled: Bool = DNSFilter.shared.isEnabled
+    @State private var newDomain: String = ""
+    @State private var customDomains: [String] = DNSFilter.shared.customBlocklist
+    @State private var showDNSDetail: Bool = false
+
     private var isLocked: Bool {
         modeManager.mode == AgentMode.managed && modeManager.managedSettingsLocked
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Managed Lock Banner
-            if isLocked {
-                HStack(spacing: 8) {
-                    Image(systemName: "lock.fill").foregroundColor(.orange)
-                    Text(modeManager.managedByOrgMessage)
-                        .font(.caption).foregroundColor(.orange)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                // Managed Lock Banner
+                if isLocked {
+                    HStack(spacing: 8) {
+                        Image(systemName: "lock.fill").foregroundColor(.orange)
+                        Text(modeManager.managedByOrgMessage)
+                            .font(.caption).foregroundColor(.orange)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08)))
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08)))
-            }
 
-            // Console Connection Section
-            consoleSection
+                // DNS Filter Section
+                dnsFilterSection
+
+                // Console Connection Section
+                consoleSection
+            }
+            .padding(16)
         }
-        .padding(16)
         .onAppear {
             tenantIdInput = policyStore.agentStatus.tenantId ?? ""
             consoleUrlInput = policyStore.agentStatus.consoleUrl
+            dnsFilterEnabled = DNSFilter.shared.isEnabled
+            customDomains = DNSFilter.shared.customBlocklist
         }
+    }
+
+    // MARK: - DNS Filter Section
+
+    var dnsFilterSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("DNS Filter", icon: "network.badge.shield.half.filled", color: .purple)
+
+            VStack(spacing: 8) {
+                // Enable/Disable Toggle
+                settingsRow {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("DNS Filtering")
+                                .font(.system(size: 11, weight: .medium))
+                            Text(dnsFilterEnabled
+                                    ? "Blocking \(DNSFilter.shared.blockedDomains.count) domains (incl. nba.com)"
+                                    : "Disabled – all domains are accessible")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $dnsFilterEnabled)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .disabled(isLocked)
+                            .onChange(of: dnsFilterEnabled) { newValue in
+                                DNSFilter.shared.isEnabled = newValue
+                            }
+                    }
+                }
+
+                // Status indicator
+                if dnsFilterEnabled {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(DNSFilter.shared.isFiltering ? Color.green : Color.orange)
+                            .frame(width: 7, height: 7)
+                        Text(DNSFilter.shared.isFiltering
+                                ? "Active – /etc/hosts sinkhole applied"
+                                : "Starting...")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 4)
+
+                    // Expand/collapse domain list
+                    Button(action: { showDNSDetail.toggle() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: showDNSDetail ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9))
+                            Text(showDNSDetail ? "Hide Blocked Domains" : "Manage Blocked Domains")
+                                .font(.system(size: 10))
+                        }
+                        .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+
+                    if showDNSDetail {
+                        dnsBlocklistEditor
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+    }
+
+    // MARK: - DNS Blocklist Editor
+
+    var dnsBlocklistEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Custom Blocked Domains")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            // Built-in notice
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle").font(.system(size: 9)).foregroundColor(.blue)
+                Text("Built-in: nba.com, nbastore.com (always blocked when DNS Filter is on)")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+
+            // Custom domain list
+            if customDomains.isEmpty {
+                Text("No custom domains added")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 2)
+            } else {
+                ForEach(customDomains, id: \.self) { domain in
+                    HStack {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.red)
+                            .onTapGesture {
+                                DNSFilter.shared.removeDomain(domain)
+                                customDomains = DNSFilter.shared.customBlocklist
+                            }
+                        Text(domain)
+                            .font(.system(size: 10, design: .monospaced))
+                        Spacer()
+                    }
+                }
+            }
+
+            // Add new domain
+            HStack(spacing: 6) {
+                TextField("e.g. youtube.com", text: $newDomain)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 10))
+                    .padding(5)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color(NSColor.textBackgroundColor)))
+                    .disabled(isLocked)
+
+                Button("Block") {
+                    guard !newDomain.isEmpty else { return }
+                    DNSFilter.shared.addDomain(newDomain)
+                    customDomains = DNSFilter.shared.customBlocklist
+                    newDomain = ""
+                }
+                .font(.system(size: 10, weight: .medium))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 5).fill(Color.red.opacity(0.8)))
+                .foregroundColor(.white)
+                .buttonStyle(.plain)
+                .disabled(isLocked || newDomain.isEmpty)
+            }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.windowBackgroundColor)))
     }
 
     // MARK: - Console Connection
     var consoleSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("Console Connection", icon: "cloud.fill", color: .blue)
-
             VStack(spacing: 8) {
                 settingsRow {
                     VStack(alignment: .leading, spacing: 4) {
@@ -64,7 +209,6 @@ struct AgentSettingsView: View {
                             .opacity(isLocked ? 0.6 : 1.0)
                     }
                 }
-
                 settingsRow {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Console URL")
@@ -78,7 +222,6 @@ struct AgentSettingsView: View {
                             .opacity(isLocked ? 0.6 : 1.0)
                     }
                 }
-
                 HStack {
                     // Connection status
                     HStack(spacing: 5) {
@@ -89,7 +232,6 @@ struct AgentSettingsView: View {
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
-
                     // Agent mode indicator
                     let isManaged = modeManager.mode == AgentMode.managed
                     HStack(spacing: 4) {
@@ -103,15 +245,12 @@ struct AgentSettingsView: View {
                     .background(Capsule().fill(
                         isManaged ? Color.blue.opacity(0.1) : Color.green.opacity(0.1)
                     ))
-
                     Spacer()
-
                     if showSaved {
                         Text("Saved!")
                             .font(.system(size: 10))
                             .foregroundColor(.green)
                     }
-
                     Button("Save & Connect") {
                         saveConsoleSettings()
                     }
