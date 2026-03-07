@@ -226,7 +226,7 @@ final class BlockPageServer: @unchecked Sendable {
 
         // Set I/O callbacks using the raw fd
         var fdCopy = cfd
-        SSLSetIOFuncs(sslContext, sslReadCallback, sslWriteCallback)
+        SSLSetIOFuncs(sslContext, BlockPageServer.sslReadCallback, BlockPageServer.sslWriteCallback)
         SSLSetConnection(sslContext, UnsafeMutableRawPointer(bitPattern: Int(cfd)))
 
         // Perform TLS handshake
