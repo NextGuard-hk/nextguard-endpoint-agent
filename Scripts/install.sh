@@ -24,7 +24,7 @@ fi
 
 echo "================================================"
 echo "  NextGuard Endpoint Agent - Installer"
-echo "  Version 2.3.0"
+echo "  Version 2.4.0"
 echo "================================================"
 echo ""
 
@@ -73,7 +73,7 @@ fi
 
 echo ""
 echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}  NextGuard Agent installed successfully!${NC}"
+echo -e "${GREEN}  NextGuard Agent v2.4.0 installed successfully!${NC}"
 echo -e "${GREEN}================================================${NC}"
 echo ""
 echo "Configuration: ${CONFIG_FILE}"
@@ -81,4 +81,7 @@ echo "Logs: ${LOG_DIR}"
 echo ""
 echo "Note: You may need to approve the System Extension"
 echo "in System Settings > Privacy & Security."
+echo ""
+echo "DNS Filter: nba.com and other blacklisted domains"
+echo "are blocked by default. Configure in Agent > Settings > DNS Filter."
 exit 0
