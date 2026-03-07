@@ -5,7 +5,6 @@
 // Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 // Enterprise-grade Data Loss Prevention for macOS
 //
-
 import AppKit
 import SwiftUI
 import os.log
@@ -28,47 +27,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
 
     static func main() {
-        // Single instance guard using flock()
-        // lockFd must remain open - OS releases lock when process exits or fd is closed
+        // ── Single instance guard using flock() ──────────────────────────────
+        // lockFd must remain open - OS releases flock when fd closes or process exits
         let lockPath = "/tmp/com.nextguard.agent.lock"
-        lockFd = open(lockPath, O_CREAT | O_RDWR, 0o600)
-        guard lockFd >= 0 else {
+        let fd = open(lockPath, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else {
             print("[ERROR] Cannot open lock file")
             exit(1)
         }
-        if flock(lockFd, LOCK_EX | LOCK_NB) != 0 {
+        if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            // Another instance is already running - terminate this duplicate
             print("[WARN] NextGuard Agent already running. Terminating duplicate instance.")
-            Darwin.close(lockFd)
+            Darwin.close(fd)
             exit(0)
         }
+        // Hold lock for the entire process lifetime
+        lockFd = fd
         let pidStr = "\(ProcessInfo.processInfo.processIdentifier)\n"
         _ = pidStr.withCString { ptr in write(lockFd, ptr, strlen(ptr)) }
 
+        // ── Launch as menu-bar-only app (no Dock icon, no extra window) ─────
         let app = NSApplication.shared
-        app.setActivationPolicy(.regular)
+        app.setActivationPolicy(.accessory)  // FIX: was .regular which caused two visible instances
         let delegate = AppDelegate()
         app.delegate = delegate
         app.run()
 
+        // Unlock and release on clean exit
         flock(lockFd, LOCK_UN)
         Darwin.close(lockFd)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        Self.logger.info("NextGuard DLP Agent launching")
+        Self.logger.info("NextGuard DLP Agent v2.4.0 launching")
         print("[OK] Application launched")
 
-        // Setup main window
-        mainWindowController = MainWindowController()
-        mainWindowController?.showWindow(nil)
-        mainWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        print("[OK] Main window opened")
-
-        // Setup menu bar - MenuBarController creates the ONLY status item
+        // Setup menu bar FIRST - MenuBarController creates the ONLY status item
         menuBarController = MenuBarController()
         menuBarController?.setupMenuBar()
         print("[OK] Menu bar initialized")
+
+        // Setup main window (hidden by default; opens on demand)
+        mainWindowController = MainWindowController()
+        print("[OK] Main window controller ready")
 
         // Start all monitors
         ClipboardMonitor.shared.startMonitoring()
@@ -80,15 +81,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NetworkMonitor.shared.startMonitoring()
         ScreenCaptureMonitor.shared.startMonitoring()
         BrowserMonitor.shared.startMonitoring()
+        DNSFilter.shared.startFiltering()
         WatermarkManager.shared.loadConfig()
         WatermarkManager.shared.startWatermark()
-        print("[OK] All monitors started")
+        print("[OK] All monitors started (including DNS Filter)")
 
         // Async: connect to console and load policies
         Task {
             if mgmtClient.tenantId == nil { mgmtClient.setTenantId("tenant-demo") }
             menuBarController?.updateConnectionStatus(.syncing)
-
             let registered = await mgmtClient.registerAgent()
             if registered {
                 Self.logger.info("Agent registered with management console")
@@ -99,7 +100,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 GUIManager.shared.updateConnectionStatus(connected: false, tenantId: mgmtClient.tenantId, consoleUrl: "https://next-guard.com")
                 menuBarController?.updateConnectionStatus(.disconnected)
             }
-
             let remotePolicies = await mgmtClient.pullPolicies()
             if !remotePolicies.isEmpty {
                 policyEngine.loadPoliciesFromConsole(remotePolicies)
@@ -108,12 +108,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 await policyEngine.loadPolicies()
                 GUIManager.shared.updatePolicyCount(policyEngine.activePolicies.count, source: "local")
             }
-
             mgmtClient.startHeartbeat()
             policyEngine.startPolicyRefresh(interval: 300)
         }
 
-        print("[OK] NextGuard Agent ready")
+        print("[OK] NextGuard Agent v2.4.0 ready")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -127,6 +126,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NetworkMonitor.shared.stopMonitoring()
         ScreenCaptureMonitor.shared.stopMonitoring()
         BrowserMonitor.shared.stopMonitoring()
+        DNSFilter.shared.stopFiltering()
         mgmtClient.stopHeartbeat()
         policyEngine.stopPolicyRefresh()
         // NOTE: Do NOT delete or close lockFd here - handled in main() after app.run() returns
@@ -136,6 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if !flag {
             mainWindowController?.showWindow(nil)
             mainWindowController?.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
         return true
     }
