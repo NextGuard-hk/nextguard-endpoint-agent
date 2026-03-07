@@ -2,10 +2,7 @@
 
 > Enterprise-grade Data Loss Prevention agent for macOS, built with Swift and Apple's native frameworks.
 
-[![macOS](https://img.shields.io/badge/macOS-14%2B-blue)](https://www.apple.com/macos/)
-[![Swift](https://img.shields.io/badge/Swift-5.9-orange)](https://swift.org/)
-[![License](https://img.shields.io/badge/License-Proprietary-red)](LICENSE)
-[![ISO 27001](https://img.shields.io/badge/ISO-27001%3A2022-green)](https://www.iso.org/isoiec-27001-information-security.html)
+[![macOS](https://img.shields.io/badge/macOS-14%2B-blue)](https://www.apple.com/macos/) [![Swift](https://img.shields.io/badge/Swift-5.9-orange)](https://swift.org/) [![License](https://img.shields.io/badge/License-Proprietary-red)](LICENSE) [![ISO 27001](https://img.shields.io/badge/ISO-27001%3A2022-green)](https://www.iso.org/isoiec-27001-information-security.html)
 
 ## Overview
 
@@ -23,6 +20,7 @@ NextGuard Endpoint DLP Agent is a comprehensive data loss prevention solution de
 | **Cloud Upload** | Detection of uploads to Google Drive, Dropbox, OneDrive, etc. | NetworkExtension |
 | **Print/AirDrop** | Print job and AirDrop transfer monitoring | CUPS + DistributedNotification |
 | **Screenshot** | Screenshot detection and audit logging | NSPasteboard |
+| **DNS Filter** | Domain blacklist blocking via /etc/hosts sinkhole (nba.com, etc.) | DNSFilter + UserDefaults |
 
 ## Architecture
 
@@ -36,7 +34,10 @@ NextGuard DLP Agent
 │   ├── NetworkMonitor.swift        # Network traffic DLP inspection
 │   ├── FileSystemWatcher.swift     # FSEvents real-time file monitoring
 │   ├── ClipboardMonitor.swift      # Clipboard DLP with screenshot detection
-│   └── USBDeviceMonitor.swift      # IOKit USB/removable device control
+│   ├── USBDeviceMonitor.swift      # IOKit USB/removable device control
+│   └── BrowserMonitor.swift        # Web upload/download DLP inspection
+├── Browser
+│   └── DNSFilter.swift             # DNS domain blacklist (/etc/hosts sinkhole)
 ├── Extensions
 │   └── SystemExtensionManager.swift # macOS System Extension + Endpoint Security
 ├── Resources
@@ -77,18 +78,20 @@ cd nextguard-endpoint-agent
 ./Scripts/build-dmg.sh --sign "Developer ID Application: NextGuard Technology Limited" --notarize
 ```
 
-The build script produces a universal binary (arm64 + x86_64) DMG installer at `.build/NextGuardDLPAgent-2.3.0.dmg`.
+The build script produces a universal binary (arm64 + x86_64) DMG installer at `.build/NextGuardDLPAgent-2.4.0.dmg`.
 
 ## Installation
 
-1. Open `NextGuardDLPAgent-2.3.0.dmg`
+1. Open `NextGuardDLPAgent-2.4.0.dmg`
 2. Drag **NextGuard DLP Agent** to Applications
 3. Launch the app — approve System Extension in **System Settings > Privacy & Security**
 4. The agent runs as a menu bar app with real-time DLP protection
+5. Configure DNS Filter in **Agent > Settings > DNS Filter** (nba.com blocked by default)
 
 ## Management Server
 
 The agent connects to NextGuard Management Console at `https://console.next-guard.com` for:
+
 - Policy distribution and updates
 - Event reporting and audit logs
 - Compliance dashboard
@@ -100,5 +103,5 @@ Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
 
 ## Support
 
-- Website: [https://www.next-guard.com](https://www.next-guard.com)
+- Website: https://www.next-guard.com
 - Email: support@next-guard.com
