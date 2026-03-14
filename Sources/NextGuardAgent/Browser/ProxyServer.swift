@@ -1,10 +1,14 @@
 //
-//  ProxyServer.swift
-//  NextGuard Endpoint DLP Agent
+// ProxyServer.swift
+// NextGuard Endpoint DLP Agent
 //
-//  Local HTTP/HTTPS proxy server for URL filtering.
-//  Like Zscaler, intercepts browser traffic via system proxy settings.
-//  Blocked domains get a custom block page; allowed traffic is forwarded.
+// Local HTTP/HTTPS proxy server for URL filtering.
+// Like Zscaler, intercepts browser traffic via system proxy settings.
+// Blocked domains get a custom block page; allowed traffic is forwarded.
+// FIX v2.4.1: HTTPS CONNECT returns 403 instead of 200+close
+// FIX v2.4.1: Block QUIC (UDP 443) to prevent Chrome bypass
+// FIX v2.4.1: Cover all active network interfaces including VPN
+// FIX v2.4.1: Block DoH endpoints to prevent DNS bypass
 //
 import Foundation
 import OSLog
@@ -15,9 +19,18 @@ final class ProxyServer: @unchecked Sendable {
     private let logger = Logger(subsystem: "com.nextguard.agent", category: "ProxyServer")
     private var isRunning = false
     let port: UInt16 = 8999
-    private let networkInterface = "Wi-Fi"
+    private let basePath = "/Library/Application Support/NextGuard"
 
     private init() {}
+
+    // MARK: - Known DoH endpoints to block
+    private let dohEndpoints: Set<String> = [
+        "dns.google", "dns.cloudflare.com", "cloudflare-dns.com",
+        "dns.quad9.net", "doh.opendns.com",
+        "mozilla.cloudflare-dns.com", "dns.nextdns.io",
+        "doh.cleanbrowsing.org", "dns.adguard.com",
+        "doh.dns.sb", "dns.twnic.tw",
+    ]
 
     // MARK: - Start / Stop
     func start() {
@@ -25,14 +38,37 @@ final class ProxyServer: @unchecked Sendable {
         isRunning = true
         Thread.detachNewThread { self.runProxyServer() }
         enableSystemProxy()
-        logger.info("ProxyServer started on port \(self.port)")
+        blockQUIC()
+        logger.info("ProxyServer started on port \(self.port) with QUIC blocking")
     }
 
     func stop() {
         guard isRunning else { return }
         isRunning = false
         disableSystemProxy()
+        unblockQUIC()
         logger.info("ProxyServer stopped")
+    }
+
+    // MARK: - QUIC Blocking (UDP 443) - Forces Chrome/Edge to fall back to HTTPS
+    private func blockQUIC() {
+        let pfRules = """
+        # NextGuard - Block QUIC to force HTTPS fallback through proxy
+        block drop quick proto udp from any to any port 443
+        """
+        let rulePath = basePath + "/pf_quic_block.conf"
+        try? FileManager.default.createDirectory(atPath: basePath, withIntermediateDirectories: true)
+        try? pfRules.write(toFile: rulePath, atomically: true, encoding: .utf8)
+        runCommand("/sbin/pfctl", ["-f", rulePath])
+        runCommand("/sbin/pfctl", ["-e"])
+        logger.info("ProxyServer: QUIC (UDP 443) blocked via pf")
+    }
+
+    private func unblockQUIC() {
+        runCommand("/sbin/pfctl", ["-d"])
+        let rulePath = basePath + "/pf_quic_block.conf"
+        try? FileManager.default.removeItem(atPath: rulePath)
+        logger.info("ProxyServer: QUIC blocking removed")
     }
 
     // MARK: - System Proxy Configuration
@@ -45,7 +81,6 @@ final class ProxyServer: @unchecked Sendable {
     }
 
     private func setProxy(enabled: Bool) {
-        // Detect active network interface
         let interfaces = getActiveInterfaces()
         for iface in interfaces {
             if enabled {
@@ -62,6 +97,7 @@ final class ProxyServer: @unchecked Sendable {
         }
     }
 
+    // MARK: - Active Interfaces (FIX: covers VPN, USB tethering, all active)
     private func getActiveInterfaces() -> [String] {
         var result: [String] = []
         let pipe = Pipe()
@@ -76,13 +112,14 @@ final class ProxyServer: @unchecked Sendable {
         let output = String(data: data, encoding: .utf8) ?? ""
         for line in output.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("An asterisk") || trimmed.hasPrefix("*") { continue }
-            // Only add common interfaces
-            if trimmed == "Wi-Fi" || trimmed == "Ethernet" || trimmed == "USB 10/100/1000 LAN" || trimmed.contains("Thunderbolt") {
-                result.append(trimmed)
-            }
+            if trimmed.isEmpty || trimmed.hasPrefix("An asterisk") { continue }
+            // Skip disabled services (marked with *)
+            if trimmed.hasPrefix("*") { continue }
+            // Include ALL active services: Wi-Fi, Ethernet, VPN, Thunderbolt, USB, etc.
+            result.append(trimmed)
         }
         if result.isEmpty { result.append("Wi-Fi") }
+        logger.info("ProxyServer: detected interfaces: \(result)")
         return result
     }
 
@@ -104,16 +141,13 @@ final class ProxyServer: @unchecked Sendable {
             return
         }
         defer { Darwin.close(serverFd) }
-
         var yes: Int32 = 1
         setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = port.bigEndian
         addr.sin_addr.s_addr = inet_addr("127.0.0.1")
         addr.sin_zero = (0,0,0,0,0,0,0,0)
-
         let bindOk = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 bind(serverFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
@@ -127,9 +161,7 @@ final class ProxyServer: @unchecked Sendable {
             logger.error("ProxyServer: listen failed")
             return
         }
-
-        print("[ProxyServer] Listening on 127.0.0.1:\(port)")
-
+        logger.info("[ProxyServer] Listening on 127.0.0.1:\(self.port)")
         while isRunning {
             var ca = sockaddr_in()
             var cl = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -146,39 +178,31 @@ final class ProxyServer: @unchecked Sendable {
     // MARK: - Handle Proxy Client
     private func handleProxyClient(_ cfd: Int32) {
         defer { Darwin.close(cfd) }
-
         var tv = timeval(tv_sec: 10, tv_usec: 0)
         setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-
         var buf = [UInt8](repeating: 0, count: 8192)
         let n = Darwin.read(cfd, &buf, buf.count)
         guard n > 0 else { return }
-
         let request = String(bytes: buf[0..<n], encoding: .utf8) ?? ""
         let firstLine = request.components(separatedBy: "\r\n").first ?? ""
         let parts = firstLine.components(separatedBy: " ")
         guard parts.count >= 3 else { return }
-
         let method = parts[0].uppercased()
         let target = parts[1]
-
         // CONNECT method = HTTPS tunnel
         if method == "CONNECT" {
             handleConnect(cfd: cfd, target: target, request: request)
             return
         }
-
         // Regular HTTP proxy request
         handleHTTPProxy(cfd: cfd, method: method, target: target, request: request, rawBytes: Array(buf[0..<n]))
     }
 
     // MARK: - HTTP Proxy (GET/POST etc)
     private func handleHTTPProxy(cfd: Int32, method: String, target: String, request: String, rawBytes: [UInt8]) {
-        // Extract host from URL or Host header
         guard let url = URL(string: target) else { return }
         let host = url.host?.lowercased() ?? extractHostHeader(from: request)?.lowercased() ?? ""
         let port = url.port ?? 80
-
         // Check if blocked
         if DNSFilter.shared.shouldBlock(url: "http://\(host)") {
             logger.info("ProxyServer: BLOCKED http://\(host)")
@@ -187,52 +211,51 @@ final class ProxyServer: @unchecked Sendable {
             _ = resp.withUnsafeBytes { Darwin.write(cfd, $0.baseAddress!, resp.count) }
             return
         }
-
         // Forward request to real server
         guard let remoteFd = connectToRemote(host: host, port: UInt16(port)) else { return }
         defer { Darwin.close(remoteFd) }
-
-        // Rewrite request: convert absolute URL to relative path
         let path = url.path.isEmpty ? "/" : url.path + (url.query.map { "?\($0)" } ?? "")
         var rewritten = "\(method) \(path) HTTP/1.1\r\n"
         let lines = request.components(separatedBy: "\r\n")
         for i in 1..<lines.count {
-            // Skip proxy-specific headers
             let lower = lines[i].lowercased()
             if lower.hasPrefix("proxy-connection") || lower.hasPrefix("proxy-auth") { continue }
             rewritten += lines[i] + "\r\n"
         }
-
         if let data = rewritten.data(using: .utf8) {
             _ = data.withUnsafeBytes { Darwin.write(remoteFd, $0.baseAddress!, data.count) }
         }
-
-        // Relay response back
         relayData(from: remoteFd, to: cfd)
     }
 
     // MARK: - HTTPS CONNECT Tunnel
+    // FIX v2.4.1: Return 403 Forbidden directly instead of 200+close
+    // Old behavior: sent "200 Connection Established" then closed -> browser retries
+    // New behavior: send "403 Forbidden" with block page HTML -> clean block
     private func handleConnect(cfd: Int32, target: String, request: String) {
         let components = target.components(separatedBy: ":")
         let host = components[0].lowercased()
         let port = UInt16(components.count > 1 ? components[1] : "443") ?? 443
 
-        // Check if blocked
-        if DNSFilter.shared.shouldBlock(url: "https://\(host)") {
-            logger.info("ProxyServer: BLOCKED https://\(host)")
-            // Send 200 Connection Established, then send block page as HTML
-            let established = "HTTP/1.1 200 Connection Established\r\n\r\n"
-            _ = established.utf8.withContiguousStorageIfAvailable {
+        // FIX v2.4.1: Block DoH endpoints to prevent DNS-over-HTTPS bypass
+        if dohEndpoints.contains(where: { host.hasSuffix($0) }) {
+            logger.info("ProxyServer: BLOCKED DoH endpoint \(host)")
+            let html = BlockPageServer.shared.buildBlockPage(domain: host)
+            let resp = "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n" + html
+            _ = resp.utf8.withContiguousStorageIfAvailable {
                 Darwin.write(cfd, $0.baseAddress!, $0.count)
             }
-            // Wait for client TLS ClientHello, then just send block page
-            // For HTTPS blocks, we send an HTTP response directly
-            // Safari will show a connection error, but this is expected
-            // The block is effective because the connection goes nowhere
-            var dummy = [UInt8](repeating: 0, count: 1024)
-            _ = Darwin.read(cfd, &dummy, dummy.count)
-            // Can't send HTML over TLS without cert, just close
-            // The user sees "connection reset" which indicates blocked
+            return
+        }
+
+        // FIX v2.4.1: Check if domain is blocked - return 403 directly
+        if DNSFilter.shared.shouldBlock(url: "https://\(host)") {
+            logger.info("ProxyServer: BLOCKED CONNECT https://\(host) [403 Forbidden]")
+            let html = BlockPageServer.shared.buildBlockPage(domain: host)
+            let resp = "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n" + html
+            _ = resp.utf8.withContiguousStorageIfAvailable {
+                Darwin.write(cfd, $0.baseAddress!, $0.count)
+            }
             return
         }
 
@@ -244,13 +267,11 @@ final class ProxyServer: @unchecked Sendable {
             }
             return
         }
-
-        // Send 200 to client
+        // Send 200 to client for allowed domains
         let ok = "HTTP/1.1 200 Connection Established\r\n\r\n"
         _ = ok.utf8.withContiguousStorageIfAvailable {
             Darwin.write(cfd, $0.baseAddress!, $0.count)
         }
-
         // Bidirectional tunnel
         let remoteFdCopy = remoteFd
         let cfdCopy = cfd
@@ -269,16 +290,13 @@ final class ProxyServer: @unchecked Sendable {
         let rc = getaddrinfo(host, "\(port)", &hints, &res)
         guard rc == 0, let addrList = res else { return nil }
         defer { freeaddrinfo(addrList) }
-
         let remoteFd = Darwin.socket(addrList.pointee.ai_family, addrList.pointee.ai_socktype, addrList.pointee.ai_protocol)
         guard remoteFd >= 0 else { return nil }
-
         let connectResult = Darwin.connect(remoteFd, addrList.pointee.ai_addr, addrList.pointee.ai_addrlen)
         guard connectResult == 0 else {
             Darwin.close(remoteFd)
             return nil
         }
-
         return remoteFd
     }
 

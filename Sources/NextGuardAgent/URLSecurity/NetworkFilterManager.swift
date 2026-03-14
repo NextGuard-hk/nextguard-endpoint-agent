@@ -3,11 +3,11 @@
 // NextGuardAgent
 //
 // Copyright (c) 2026 NextGuard Technology Limited. All rights reserved.
-// Network Filter Manager - DNS-level URL blocking for blacklisted domains
-// Uses /etc/hosts modification + NEFilterManager for enterprise URL filtering
-// FIX: Persist filter state across launches; auto-restore on init
+// Network Filter Manager - Unified URL blocking coordinator
+// FIX v2.4.1: Removed duplicate /etc/hosts logic - now delegates to DNSFilter
+// FIX v2.4.1: Single source of truth for domain blocking via DNSFilter + ProxyServer
+// Uses NEFilterManager for content filter + DNSFilter for actual blocking
 //
-
 import Foundation
 import NetworkExtension
 import os.log
@@ -24,12 +24,7 @@ final class NetworkFilterManager: ObservableObject {
     @Published var lastBlockedDomain: String = ""
     @Published var lastBlockedDate: Date? = nil
 
-    private var blockedDomains: Set<String> = []
     private var cancellables = Set<AnyCancellable>()
-    private let hostsFilePath = "/etc/hosts"
-    private let markerStart = "# >>> NextGuard URL Security Blocked Domains"
-    private let markerEnd = "# <<< NextGuard URL Security Blocked Domains"
-    private let basePath = NSHomeDirectory() + "/Library/Application Support/NextGuard"
     private let filterEnabledKey = "com.nextguard.urlsecurity.filterEnabled"
 
     enum FilterStatus: String {
@@ -38,7 +33,6 @@ final class NetworkFilterManager: ObservableObject {
         case active = "Active"
         case error = "Error"
         case disabled = "Disabled"
-
         var color: String {
             switch self {
             case .active: return "green"
@@ -47,7 +41,6 @@ final class NetworkFilterManager: ObservableObject {
             case .disabled, .notConfigured: return "gray"
             }
         }
-
         var icon: String {
             switch self {
             case .active: return "shield.checkered"
@@ -59,15 +52,15 @@ final class NetworkFilterManager: ObservableObject {
     }
 
     private init() {
-        loadBlockedDomains()
         syncBlacklistWithScanner()
-        // Restore filter state from UserDefaults
         let savedEnabled = UserDefaults.standard.bool(forKey: filterEnabledKey)
         if savedEnabled {
             logger.info("[Filter] Restoring previously enabled filter state")
             isFilterEnabled = true
             filterStatus = .activating
-            applyDNSBlocking()
+            // FIX v2.4.1: Delegate to DNSFilter instead of duplicate /etc/hosts
+            DNSFilter.shared.startFiltering()
+            filterStatus = .active
         }
     }
 
@@ -82,114 +75,26 @@ final class NetworkFilterManager: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Domain Management
+    // MARK: - Domain Management (FIX v2.4.1: delegates to DNSFilter)
     func updateBlockedDomains(_ domains: Set<String>) {
-        let newDomains = domains.subtracting(blockedDomains)
-        let removedDomains = blockedDomains.subtracting(domains)
-        blockedDomains = domains
-        saveBlockedDomains()
-        if !newDomains.isEmpty || !removedDomains.isEmpty {
-            if isFilterEnabled { applyDNSBlocking() }
-            logger.info("[Filter] Updated: +\(newDomains.count) -\(removedDomains.count) domains. Total: \(domains.count)")
+        for domain in domains {
+            DNSFilter.shared.addDomain(domain)
+        }
+        if isFilterEnabled {
+            logger.info("[Filter] Updated domains via DNSFilter. Total: \(domains.count)")
         }
     }
 
     func addBlockedDomain(_ domain: String) {
         let d = domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !d.isEmpty else { return }
-        blockedDomains.insert(d)
-        saveBlockedDomains()
-        if isFilterEnabled { applyDNSBlocking() }
+        DNSFilter.shared.addDomain(d)
         logger.info("[Filter] Blocked: \(d)")
     }
 
     func removeBlockedDomain(_ domain: String) {
-        blockedDomains.remove(domain)
-        saveBlockedDomains()
-        if isFilterEnabled { applyDNSBlocking() }
+        DNSFilter.shared.removeDomain(domain)
         logger.info("[Filter] Unblocked: \(domain)")
-    }
-
-    // MARK: - DNS-Level Blocking (/etc/hosts)
-    func applyDNSBlocking() {
-        guard isFilterEnabled else {
-            removeDNSBlocking()
-            return
-        }
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            do {
-                var hostsContent = try String(contentsOfFile: hostsFilePath, encoding: .utf8)
-                hostsContent = removeNextGuardEntries(from: hostsContent)
-                if !blockedDomains.isEmpty {
-                    var blockEntries = "\n\(markerStart)\n"
-                    for domain in blockedDomains.sorted() {
-                        blockEntries += "0.0.0.0 \(domain)\n"
-                        if !domain.hasPrefix("www.") {
-                            blockEntries += "0.0.0.0 www.\(domain)\n"
-                        }
-                    }
-                    blockEntries += "\(markerEnd)\n"
-                    hostsContent += blockEntries
-                }
-                let tempPath = basePath + "/hosts_update.tmp"
-                try FileManager.default.createDirectory(atPath: basePath, withIntermediateDirectories: true)
-                try hostsContent.write(toFile: tempPath, atomically: true, encoding: .utf8)
-                let script = "do shell script \"cp \(tempPath) \(hostsFilePath) && dscacheutil -flushcache && killall -HUP mDNSResponder\" with administrator privileges"
-                let appleScript = NSAppleScript(source: script)
-                var error: NSDictionary?
-                appleScript?.executeAndReturnError(&error)
-                if let error = error {
-                    logger.error("[Filter] Failed to apply DNS blocking: \(error)")
-                    DispatchQueue.main.async { self.filterStatus = .error }
-                } else {
-                    try? FileManager.default.removeItem(atPath: tempPath)
-                    logger.info("[Filter] DNS blocking applied: \(self.blockedDomains.count) domains")
-                    DispatchQueue.main.async { self.filterStatus = .active }
-                }
-            } catch {
-                logger.error("[Filter] DNS blocking error: \(error.localizedDescription)")
-                DispatchQueue.main.async { self.filterStatus = .error }
-            }
-        }
-    }
-
-    func removeDNSBlocking() {
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            do {
-                var hostsContent = try String(contentsOfFile: hostsFilePath, encoding: .utf8)
-                hostsContent = removeNextGuardEntries(from: hostsContent)
-                let tempPath = basePath + "/hosts_remove.tmp"
-                try hostsContent.write(toFile: tempPath, atomically: true, encoding: .utf8)
-                let script = "do shell script \"cp \(tempPath) \(hostsFilePath) && dscacheutil -flushcache && killall -HUP mDNSResponder\" with administrator privileges"
-                let appleScript = NSAppleScript(source: script)
-                var error: NSDictionary?
-                appleScript?.executeAndReturnError(&error)
-                try? FileManager.default.removeItem(atPath: tempPath)
-                DispatchQueue.main.async { self.filterStatus = .disabled }
-                logger.info("[Filter] DNS blocking removed")
-            } catch {
-                logger.error("[Filter] Remove blocking error: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func removeNextGuardEntries(from content: String) -> String {
-        let lines = content.components(separatedBy: .newlines)
-        var result: [String] = []
-        var inBlock = false
-        for line in lines {
-            if line.trimmingCharacters(in: .whitespaces) == markerStart {
-                inBlock = true; continue
-            }
-            if line.trimmingCharacters(in: .whitespaces) == markerEnd {
-                inBlock = false; continue
-            }
-            if !inBlock { result.append(line) }
-        }
-        while result.last?.trimmingCharacters(in: .whitespaces).isEmpty == true {
-            result.removeLast()
-        }
-        return result.joined(separator: "\n")
     }
 
     // MARK: - NEFilterManager (Content Filter)
@@ -236,42 +141,39 @@ final class NetworkFilterManager: ObservableObject {
         }
     }
 
-    // MARK: - Enable/Disable Filter
+    // MARK: - Enable/Disable Filter (FIX v2.4.1: unified via DNSFilter)
     func enableFilter() {
         isFilterEnabled = true
         UserDefaults.standard.set(true, forKey: filterEnabledKey)
-        applyDNSBlocking()
+        DNSFilter.shared.startFiltering()
         enableContentFilter()
-        logger.info("[Filter] Filter ENABLED - DNS blocking active")
+        logger.info("[Filter] Filter ENABLED - DNS + proxy blocking active")
     }
 
     func disableFilter() {
         isFilterEnabled = false
         UserDefaults.standard.set(false, forKey: filterEnabledKey)
-        removeDNSBlocking()
+        DNSFilter.shared.stopFiltering()
         disableContentFilter()
         logger.info("[Filter] Filter DISABLED")
     }
 
-    // MARK: - URL Check (called by URLSecuritySettingsView or scanner)
+    // MARK: - URL Check
     func shouldBlockURL(_ urlString: String) -> Bool {
         guard isFilterEnabled else { return false }
-        guard let url = URL(string: urlString.hasPrefix("http") ? urlString : "https://\(urlString)"),
-              let host = url.host?.lowercased() else { return false }
-        if blockedDomains.contains(host) {
+        // Delegate domain check to DNSFilter
+        if DNSFilter.shared.shouldBlock(url: urlString) {
+            guard let url = URL(string: urlString.hasPrefix("http") ? urlString : "https://\(urlString)"),
+                  let host = url.host?.lowercased() else { return true }
             recordBlock(domain: host)
             return true
-        }
-        for blocked in blockedDomains {
-            if host.hasSuffix("." + blocked) || host == blocked {
-                recordBlock(domain: host)
-                return true
-            }
         }
         let scanResult = URLSecurityScanner.shared.scanURL(urlString)
         if scanResult.threatLevel == .blocked || scanResult.threatLevel == .dangerous {
             if URLSecurityScanner.shared.blockMode == .warnAndBlock || URLSecurityScanner.shared.blockMode == .silentBlock {
-                recordBlock(domain: host)
+                if let host = URL(string: urlString)?.host {
+                    recordBlock(domain: host)
+                }
                 return true
             }
         }
@@ -287,24 +189,7 @@ final class NetworkFilterManager: ObservableObject {
         logger.warning("[Filter] BLOCKED: \(domain)")
     }
 
-    // MARK: - Persistence
-    private func saveBlockedDomains() {
-        let path = basePath + "/blocked_domains.json"
-        try? FileManager.default.createDirectory(atPath: basePath, withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(Array(blockedDomains)) {
-            try? data.write(to: URL(fileURLWithPath: path))
-        }
-    }
-
-    private func loadBlockedDomains() {
-        let path = basePath + "/blocked_domains.json"
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-           let domains = try? JSONDecoder().decode([String].self, from: data) {
-            blockedDomains = Set(domains)
-        }
-    }
-
     // MARK: - Status
-    var blockedDomainsCount: Int { blockedDomains.count }
-    var blockedDomainsList: [String] { blockedDomains.sorted() }
+    var blockedDomainsCount: Int { DNSFilter.shared.blockedDomains.count }
+    var blockedDomainsList: [String] { DNSFilter.shared.blockedDomains.sorted() }
 }
