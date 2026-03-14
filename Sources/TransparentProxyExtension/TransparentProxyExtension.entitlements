@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Network Extension entitlement - REQUIRED -->
+    <!-- You must request this from Apple via: -->
+    <!-- https://developer.apple.com/contact/request/network-extension/ -->
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>transparent-proxy-provider</string>
+    </array>
+
+    <!-- App Groups for shared data between main app and extension -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>$(TeamIdentifierPrefix)com.nextguard.agent</string>
+    </array>
+
+    <!-- Mach service for IPC between app and extension -->
+    <key>com.apple.developer.networking.networkextension.mach-service</key>
+    <array>
+        <string>$(TeamIdentifierPrefix)com.nextguard.agent.transparent-proxy</string>
+    </array>
+</dict>
+</plist>

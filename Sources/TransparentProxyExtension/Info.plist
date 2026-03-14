@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>NextGuard URL Filter</string>
+    <key>CFBundleExecutable</key>
+    <string>com.nextguard.agent.transparent-proxy</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.nextguard.agent.transparent-proxy</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>NextGuardTransparentProxy</string>
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+    <key>CFBundleShortVersionString</key>
+    <string>2.5.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.networkextension.transparent-proxy</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>$(PRODUCT_MODULE_NAME).TransparentProxyProvider</string>
+    </dict>
+    <key>NetworkExtension</key>
+    <dict>
+        <key>NEProviderClasses</key>
+        <dict>
+            <key>com.apple.networkextension.transparent-proxy</key>
+            <string>$(PRODUCT_MODULE_NAME).TransparentProxyProvider</string>
+        </dict>
+        <key>NEMachServiceName</key>
+        <string>$(TeamIdentifierPrefix)com.nextguard.agent.transparent-proxy</string>
+    </dict>
+</dict>
+</plist>

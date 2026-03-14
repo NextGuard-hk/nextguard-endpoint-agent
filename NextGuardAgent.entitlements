@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Network Extension entitlement for main app -->
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>transparent-proxy-provider</string>
+    </array>
+
+    <!-- System Extension entitlement (required to install NE as system extension) -->
+    <key>com.apple.developer.system-extension.install</key>
+    <true/>
+
+    <!-- App Groups for shared data between main app and extension -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>$(TeamIdentifierPrefix)com.nextguard.agent</string>
+    </array>
+
+    <!-- App Sandbox (required for distribution) -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Network access -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- File access for DLP features -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!-- Hardened Runtime -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
